@@ -38,7 +38,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x000000, 0);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.85;
+renderer.toneMappingExposure = 0.5;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 
@@ -58,16 +58,28 @@ const bloomPass = new UnrealBloomPass(
 composer.addPass(bloomPass);
 
 const laserMaterials = [];
+const meshVisibilityState = {};
+const laserAnimationTargets = new Map();
+let laserAnimationState = null;
+
+const isMeaningfulNodeName = (name) => {
+  if (!name) {
+    return false;
+  }
+
+  return !/(plane|circle)/i.test(name);
+};
 
 const guiState = {
   laserColor: "#ff8080",
   laserGlowColor: "#ff0000",
-  laserOpacity: 0.5,
+  laserOpacity: 0,
+  laserVisibleOpacity: 0.5,
   laserEmissiveIntensity: 4.5,
   bloomStrength: 0.28,
   bloomRadius: 0.18,
   bloomThreshold: 0.95,
-  exposure: 0.85,
+  exposure: 0.5,
   background: "#4f4f4f",
   fillColor: "#d7e3f4",
   fillIntensity: 0.45,
@@ -237,7 +249,64 @@ const syncBloom = () => {
   bloomPass.threshold = guiState.bloomThreshold;
 };
 
+const startLaserAnimation = () => {
+  const sequence = ["OGLAZ", "OGLAZ2", "DMD1", "DMD2"]
+    .map((name) => laserAnimationTargets.get(name))
+    .filter(Boolean);
+
+  if (sequence.length === 0) {
+    return;
+  }
+
+  guiState.laserOpacity = guiState.laserVisibleOpacity;
+  syncLaserMaterials();
+
+  for (const entry of sequence) {
+    entry.object.visible = false;
+    entry.object.scale.set(0, 0, 0);
+  }
+
+  laserAnimationState = {
+    sequence,
+    index: 0,
+    elapsed: 0,
+  };
+};
+
+const updateLaserAnimation = (deltaMs) => {
+  if (!laserAnimationState) {
+    return;
+  }
+
+  const current = laserAnimationState.sequence[laserAnimationState.index];
+
+  if (!current) {
+    laserAnimationState = null;
+    return;
+  }
+
+  laserAnimationState.elapsed += deltaMs;
+  const duration = current.duration;
+  const progress = Math.min(laserAnimationState.elapsed / duration, 1);
+
+  current.object.visible = true;
+  current.object.scale.copy(current.originalScale).multiplyScalar(progress);
+
+  if (progress < 1) {
+    return;
+  }
+
+  current.object.scale.copy(current.originalScale);
+  laserAnimationState.index += 1;
+  laserAnimationState.elapsed = 0;
+
+  if (laserAnimationState.index >= laserAnimationState.sequence.length) {
+    laserAnimationState = null;
+  }
+};
+
 const gui = new GUI({ title: "Scene Controls" });
+const meshGui = new GUI({ title: "Mesh Visibility" });
 
 const laserFolder = gui.addFolder("Laser");
 laserFolder
@@ -249,13 +318,21 @@ laserFolder
   .name("Glow Color")
   .onChange(syncLaserMaterials);
 laserFolder
-  .add(guiState, "laserOpacity", 0.05, 1, 0.01)
+  .add(guiState, "laserOpacity", 0, 1, 0.01)
   .name("Beam Opacity")
-  .onChange(syncLaserMaterials);
+  .onChange((value) => {
+    if (value > 0) {
+      guiState.laserVisibleOpacity = value;
+    }
+    syncLaserMaterials();
+  });
 laserFolder
   .add(guiState, "laserEmissiveIntensity", 0, 8, 0.1)
   .name("Glow Intensity")
   .onChange(syncLaserMaterials);
+laserFolder
+  .add({ laseranimation: startLaserAnimation }, "laseranimation")
+  .name("Trigger Animation");
 laserFolder.open();
 
 const lightFolder = gui.addFolder("Lights");
@@ -352,6 +429,52 @@ bloomFolder
 
 syncLighting();
 syncBloom();
+
+const registerMeshVisibilityControls = (model) => {
+  const meshFolder = meshGui.addFolder("Objects");
+  const nameCounts = new Map();
+
+  model.traverse((child) => {
+    if (!isMeaningfulNodeName(child.name) || child === model) {
+      return;
+    }
+
+    const baseName = child.name;
+    const nextCount = (nameCounts.get(baseName) ?? 0) + 1;
+    nameCounts.set(baseName, nextCount);
+
+    const label = nextCount === 1 ? baseName : `${baseName} (${nextCount})`;
+    meshVisibilityState[label] = child.visible;
+
+    meshFolder
+      .add(meshVisibilityState, label)
+      .name(label)
+      .onChange((visible) => {
+        child.visible = visible;
+      });
+  });
+};
+
+const registerLaserAnimationTargets = (model) => {
+  for (const name of ["OGLAZ", "OGLAZ2", "DMD1", "DMD2"]) {
+    const object = model.getObjectByName(name);
+
+    if (!object) {
+      continue;
+    }
+
+    const size = new THREE.Box3()
+      .setFromObject(object)
+      .getSize(new THREE.Vector3());
+    const visualLength = size.length();
+
+    laserAnimationTargets.set(name, {
+      object,
+      originalScale: object.scale.clone(),
+      duration: Math.max(visualLength * 4, 80),
+    });
+  }
+};
 
 const configureShadowCamera = (light, center, radius) => {
   const shadowCamera = light.shadow.camera;
@@ -464,6 +587,8 @@ loader.load(modelUrl, (gltf) => {
   controls.update();
   syncLaserMaterials();
   syncLighting();
+  registerMeshVisibilityControls(model);
+  registerLaserAnimationTargets(model);
 });
 
 const handleResize = () => {
@@ -476,8 +601,15 @@ const handleResize = () => {
 
 window.addEventListener("resize", handleResize);
 
+let lastFrameTime = performance.now();
+
 const tick = () => {
+  const now = performance.now();
+  const deltaMs = now - lastFrameTime;
+  lastFrameTime = now;
+
   controls.update();
+  updateLaserAnimation(deltaMs);
   composer.render();
   window.requestAnimationFrame(tick);
 };
