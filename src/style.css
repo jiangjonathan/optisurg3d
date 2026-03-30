@@ -35,6 +35,30 @@ body {
     background: transparent;
 }
 
+.focus-back {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    z-index: 6;
+    padding: 0.45rem 0.7rem;
+    color: #f8fbff;
+    font-size: 0.8rem;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-weight: 400;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 0;
+    background: rgba(10, 16, 24, 0.82);
+    opacity: 0;
+    pointer-events: none;
+    cursor: pointer;
+    transition: opacity 120ms ease;
+}
+
+.focus-back.is-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
 .hover-label {
     position: absolute;
     top: 0;

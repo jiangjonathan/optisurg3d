@@ -14,11 +14,13 @@ const app = document.querySelector("#app");
 app.innerHTML = `
   <div class="viewer-shell">
     <canvas class="viewer"></canvas>
+    <button class="focus-back" type="button">Back</button>
   </div>
 `;
 
 const viewerShell = document.querySelector(".viewer-shell");
 const canvas = document.querySelector(".viewer");
+const focusBackButton = document.querySelector(".focus-back");
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x4f4f4f);
@@ -87,15 +89,25 @@ const hoverBounds = new Map();
 let hoveredSelectionId = null;
 let hoveredSelectionObjects = [];
 let hoveredSelectionLabel = "";
+let hoveredSelectionCameraKey = null;
 let loadedModel = null;
 let isPointerOverCanvas = false;
+let isFocusLocked = false;
 let groupedHoverObjects = [];
 const hoverLabels = new Map();
 let activeHoverLabel = null;
-const hoverPixelLeeway = 10;
+const hoverPixelLeeway = 2;
+const hoverRadiusScale = 0.28;
 const hoverLabelBounds = new THREE.Box3();
 const hoverLabelAnchor = new THREE.Vector3();
 const hoverLabelProjection = new THREE.Vector3();
+const focusBounds = new THREE.Box3();
+const focusSize = new THREE.Vector3();
+const focusCenter = new THREE.Vector3();
+const focusTarget = new THREE.Vector3();
+const focusPosition = new THREE.Vector3();
+const previousCameraPosition = new THREE.Vector3();
+const previousCameraTarget = new THREE.Vector3();
 const hoverLabelNameRules = [
   { pattern: /dmd[\s_-]*1/i, label: "DMD 1" },
   { pattern: /dmd[\s_-]*2/i, label: "DMD 2" },
@@ -111,6 +123,54 @@ const groupedHoverEntityNames = new Set([
   "laser",
   "laserfoundation",
 ]);
+const entityCameraViews = {
+  "laser-assembly": {
+    positionOffset: [0.42, 0, 0.52],
+    targetOffset: [0, 0, 0],
+    fitMultiplier: 1.1,
+    position: { x: 9, y: 27, z: null },
+    focusTarget: { x: -9, y: 19, z: null },
+  },
+  "dmd-1": {
+    positionOffset: [0.32, 0, 0],
+    targetOffset: [0, 0, 0],
+    fitMultiplier: 0.95,
+    position: { x: null, y: 21, z: null },
+    focusTarget: { x: null, y: 20, z: null },
+  },
+  "fourier-lens-1": {
+    positionOffset: [-0.28, 0, 0],
+    targetOffset: [0, 0, 0],
+    fitMultiplier: 0.95,
+    position: {
+      x: -20,
+      y: 22,
+      z: -0.5,
+    },
+    focusTarget: { x: 0, y: 21, z: null },
+  },
+  "dmd-2": {
+    positionOffset: [-0.32, 0, 0],
+    targetOffset: [0, 0, 0],
+    fitMultiplier: 0.95,
+    position: { x: null, y: 21, z: -13 },
+    focusTarget: { x: null, y: 20, z: -13 },
+  },
+  "fourier-lens-2": {
+    positionOffset: [0.16, 0, 0.22],
+    targetOffset: [0, 0, 0],
+    fitMultiplier: 0.95,
+    position: { x: null, y: 21, z: -18.15 },
+    focusTarget: { x: null, y: 20, z: -19 },
+  },
+  camera: {
+    positionOffset: [0.22, 0, 0.28],
+    targetOffset: [0, 0, 0],
+    fitMultiplier: 1,
+    position: { x: 10, y: 21, z: null },
+    focusTarget: { x: null, y: 19, z: null },
+  },
+};
 
 const isMeaningfulNodeName = (name) => {
   if (!name) {
@@ -119,6 +179,12 @@ const isMeaningfulNodeName = (name) => {
 
   return !/(plane|circle)/i.test(name);
 };
+
+const toCameraKey = (label) =>
+  label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 
 const formatHoverLabel = (name) => {
   if (!name) {
@@ -174,24 +240,29 @@ const getHoverSelection = (object) => {
         id: "laser-assembly",
         objects: groupedHoverObjects,
         label: "Laser Assembly",
+        cameraKey: "laser-assembly",
       };
     }
 
     if (isMeaningfulNodeName(current.name)) {
+      const label = formatHoverLabel(current.name);
       return {
         id: current.uuid,
         objects: [current],
-        label: formatHoverLabel(current.name),
+        label,
+        cameraKey: toCameraKey(label),
       };
     }
 
     current = current.parent;
   }
 
+  const label = formatHoverLabel(object.name);
   return {
     id: object.uuid,
     objects: [object],
-    label: formatHoverLabel(object.name),
+    label,
+    cameraKey: toCameraKey(label),
   };
 };
 
@@ -229,13 +300,14 @@ const getLeewayHoverObject = () => {
         ),
       );
     const projectedRadiusPoint = radiusPoint.project(camera);
-    const radiusPx = Math.max(
-      Math.hypot(
-        (projectedRadiusPoint.x + 1) * 0.5 * canvasWidth - centerX,
-        (1 - projectedRadiusPoint.y) * 0.5 * canvasHeight - centerY,
-      ),
-      6,
-    );
+    const radiusPx =
+      Math.max(
+        Math.hypot(
+          (projectedRadiusPoint.x + 1) * 0.5 * canvasWidth - centerX,
+          (1 - projectedRadiusPoint.y) * 0.5 * canvasHeight - centerY,
+        ),
+        6,
+      ) * hoverRadiusScale;
     const pointerX = (pointer.x + 1) * 0.5 * canvasWidth;
     const pointerY = (1 - pointer.y) * 0.5 * canvasHeight;
     const distance = Math.hypot(pointerX - centerX, pointerY - centerY);
@@ -251,6 +323,94 @@ const getLeewayHoverObject = () => {
 
 const syncHoveredOutline = () => {
   outlinePass.selectedObjects = hoveredSelectionObjects;
+};
+
+const syncFocusBackButton = () => {
+  focusBackButton.classList.toggle("is-visible", isFocusLocked);
+};
+
+const focusCameraOnSelection = () => {
+  if (
+    isFocusLocked ||
+    !hoveredSelectionObjects.length ||
+    !hoveredSelectionCameraKey
+  ) {
+    return;
+  }
+
+  previousCameraPosition.copy(camera.position);
+  previousCameraTarget.copy(controls.target);
+
+  focusBounds.makeEmpty();
+
+  for (const object of hoveredSelectionObjects) {
+    focusBounds.expandByObject(object);
+  }
+
+  if (focusBounds.isEmpty()) {
+    return;
+  }
+
+  focusBounds.getSize(focusSize);
+  focusBounds.getCenter(focusCenter);
+
+  const preset = entityCameraViews[hoveredSelectionCameraKey] ?? {
+    positionOffset: [0.3, 0.14, 0.38],
+    targetOffset: [0, 0, 0],
+    fitMultiplier: 1,
+    position: { x: null, y: 25, z: null },
+    focusTarget: { x: null, y: 19, z: null },
+  };
+  const fitScale = Math.max(
+    Math.max(focusSize.x, focusSize.y, focusSize.z),
+    0.12,
+  );
+
+  focusTarget
+    .copy(focusCenter)
+    .add(new THREE.Vector3(...preset.targetOffset).multiplyScalar(fitScale));
+  focusPosition
+    .copy(focusCenter)
+    .add(
+      new THREE.Vector3(...preset.positionOffset).multiplyScalar(
+        fitScale * preset.fitMultiplier,
+      ),
+    );
+  focusTarget.set(
+    preset.focusTarget.x ?? focusTarget.x,
+    preset.focusTarget.y ?? focusTarget.y,
+    preset.focusTarget.z ?? focusTarget.z,
+  );
+  focusPosition.set(
+    preset.position.x ?? focusPosition.x,
+    preset.position.y ?? focusPosition.y,
+    preset.position.z ?? focusPosition.z,
+  );
+
+  camera.position.copy(focusPosition);
+  controls.target.copy(focusTarget);
+  controls.update();
+  isFocusLocked = true;
+  syncFocusBackButton();
+};
+
+const exitFocusedSelection = () => {
+  if (!isFocusLocked) {
+    return;
+  }
+
+  camera.position.copy(previousCameraPosition);
+  controls.target.copy(previousCameraTarget);
+  controls.update();
+
+  isFocusLocked = false;
+  hoveredSelectionId = null;
+  hoveredSelectionObjects = [];
+  hoveredSelectionLabel = "";
+  hoveredSelectionCameraKey = null;
+  syncHoveredOutline();
+  updateHoverLabel();
+  syncFocusBackButton();
 };
 
 const getHoverLabelElement = (selectionId, label) => {
@@ -345,21 +505,35 @@ const handlePointerMove = (event) => {
   updatePointer(event);
 };
 
+const handleCanvasClick = () => {
+  focusCameraOnSelection();
+};
+
 const handlePointerLeave = () => {
+  if (isFocusLocked) {
+    return;
+  }
+
   isPointerOverCanvas = false;
   hoveredSelectionId = null;
   hoveredSelectionObjects = [];
   hoveredSelectionLabel = "";
+  hoveredSelectionCameraKey = null;
   syncHoveredOutline();
   updateHoverLabel();
 };
 
 const updateHoveredObject = () => {
+  if (isFocusLocked) {
+    return;
+  }
+
   if (!loadedModel || !isPointerOverCanvas || hoverableMeshes.length === 0) {
     if (hoveredSelectionId) {
       hoveredSelectionId = null;
       hoveredSelectionObjects = [];
       hoveredSelectionLabel = "";
+      hoveredSelectionCameraKey = null;
       syncHoveredOutline();
       updateHoverLabel();
     }
@@ -379,12 +553,15 @@ const updateHoveredObject = () => {
   hoveredSelectionId = nextSelection?.id ?? null;
   hoveredSelectionObjects = nextSelection?.objects ?? [];
   hoveredSelectionLabel = nextSelection?.label ?? "";
+  hoveredSelectionCameraKey = nextSelection?.cameraKey ?? null;
   syncHoveredOutline();
   updateHoverLabel();
 };
 
 canvas.addEventListener("pointermove", handlePointerMove);
 canvas.addEventListener("pointerleave", handlePointerLeave);
+canvas.addEventListener("click", handleCanvasClick);
+focusBackButton.addEventListener("click", exitFocusedSelection);
 
 const guiState = {
   laserColor: "#ff8080",
