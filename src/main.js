@@ -6,6 +6,8 @@ import { GUI } from "three/examples/jsm/libs/lil-gui.module.min.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 const app = document.querySelector("#app");
@@ -15,6 +17,7 @@ app.innerHTML = `
   </div>
 `;
 
+const viewerShell = document.querySelector(".viewer-shell");
 const canvas = document.querySelector(".viewer");
 
 const scene = new THREE.Scene();
@@ -57,10 +60,57 @@ const bloomPass = new UnrealBloomPass(
 );
 composer.addPass(bloomPass);
 
+const outlinePass = new OutlinePass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  scene,
+  camera,
+);
+outlinePass.edgeStrength = 12;
+outlinePass.edgeGlow = 0.6;
+outlinePass.edgeThickness = 3.75;
+outlinePass.pulsePeriod = 0;
+outlinePass.visibleEdgeColor.set("#ffffff");
+outlinePass.hiddenEdgeColor.set("#ffffff");
+composer.addPass(outlinePass);
+
+const outputPass = new OutputPass();
+composer.addPass(outputPass);
+
 const laserMaterials = [];
 const meshVisibilityState = {};
 const laserAnimationTargets = new Map();
 let laserAnimationState = null;
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const hoverableMeshes = [];
+const hoverBounds = new Map();
+let hoveredSelectionId = null;
+let hoveredSelectionObjects = [];
+let hoveredSelectionLabel = "";
+let loadedModel = null;
+let isPointerOverCanvas = false;
+let groupedHoverObjects = [];
+const hoverLabels = new Map();
+let activeHoverLabel = null;
+const hoverPixelLeeway = 10;
+const hoverLabelBounds = new THREE.Box3();
+const hoverLabelAnchor = new THREE.Vector3();
+const hoverLabelProjection = new THREE.Vector3();
+const hoverLabelNameRules = [
+  { pattern: /dmd[\s_-]*1/i, label: "DMD 1" },
+  { pattern: /dmd[\s_-]*2/i, label: "DMD 2" },
+  { pattern: /(flens|fourierlens)[\s_-]*1/i, label: "Fourier Lens 1" },
+  { pattern: /(flens|fourierlens)[\s_-]*2/i, label: "Fourier Lens 2" },
+  { pattern: /camera/i, label: "Camera" },
+];
+const groupedHoverEntityNames = new Set([
+  "beamex",
+  "lh2a",
+  "apertuer",
+  "aperture",
+  "laser",
+  "laserfoundation",
+]);
 
 const isMeaningfulNodeName = (name) => {
   if (!name) {
@@ -69,6 +119,272 @@ const isMeaningfulNodeName = (name) => {
 
   return !/(plane|circle)/i.test(name);
 };
+
+const formatHoverLabel = (name) => {
+  if (!name) {
+    return "Object";
+  }
+
+  for (const rule of hoverLabelNameRules) {
+    if (rule.pattern.test(name)) {
+      return rule.label;
+    }
+  }
+
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim();
+};
+
+const isOutlineExcluded = (object, materials) => {
+  const name = object.name?.toLowerCase() ?? "";
+
+  if (name.includes("found")) {
+    return true;
+  }
+
+  return materials.some(isLaserMaterial);
+};
+
+const belongsToGroupedHoverEntity = (object) => {
+  let current = object;
+
+  while (current && current !== loadedModel) {
+    const name = current.name?.toLowerCase() ?? "";
+
+    if (groupedHoverEntityNames.has(name)) {
+      return true;
+    }
+
+    current = current.parent;
+  }
+
+  return false;
+};
+
+const getHoverSelection = (object) => {
+  let current = object;
+
+  while (current && current !== loadedModel) {
+    const name = current.name?.toLowerCase() ?? "";
+
+    if (groupedHoverEntityNames.has(name)) {
+      return {
+        id: "laser-assembly",
+        objects: groupedHoverObjects,
+        label: "Laser Assembly",
+      };
+    }
+
+    if (isMeaningfulNodeName(current.name)) {
+      return {
+        id: current.uuid,
+        objects: [current],
+        label: formatHoverLabel(current.name),
+      };
+    }
+
+    current = current.parent;
+  }
+
+  return {
+    id: object.uuid,
+    objects: [object],
+    label: formatHoverLabel(object.name),
+  };
+};
+
+const getLeewayHoverObject = () => {
+  if (!loadedModel) {
+    return null;
+  }
+
+  const canvasWidth = renderer.domElement.clientWidth;
+  const canvasHeight = renderer.domElement.clientHeight;
+  let bestObject = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (const object of hoverableMeshes) {
+    const bounds = hoverBounds.get(object);
+
+    if (!bounds || !object.visible) {
+      continue;
+    }
+
+    const worldCenter = bounds.center.clone().applyMatrix4(object.matrixWorld);
+    const projectedCenter = worldCenter.project(camera);
+
+    if (projectedCenter.z < -1 || projectedCenter.z > 1) {
+      continue;
+    }
+
+    const centerX = (projectedCenter.x + 1) * 0.5 * canvasWidth;
+    const centerY = (1 - projectedCenter.y) * 0.5 * canvasHeight;
+    const radiusPoint = worldCenter
+      .clone()
+      .add(
+        new THREE.Vector3(bounds.radius, 0, 0).applyQuaternion(
+          object.getWorldQuaternion(new THREE.Quaternion()),
+        ),
+      );
+    const projectedRadiusPoint = radiusPoint.project(camera);
+    const radiusPx = Math.max(
+      Math.hypot(
+        (projectedRadiusPoint.x + 1) * 0.5 * canvasWidth - centerX,
+        (1 - projectedRadiusPoint.y) * 0.5 * canvasHeight - centerY,
+      ),
+      6,
+    );
+    const pointerX = (pointer.x + 1) * 0.5 * canvasWidth;
+    const pointerY = (1 - pointer.y) * 0.5 * canvasHeight;
+    const distance = Math.hypot(pointerX - centerX, pointerY - centerY);
+
+    if (distance <= radiusPx + hoverPixelLeeway && distance < bestDistance) {
+      bestObject = object;
+      bestDistance = distance;
+    }
+  }
+
+  return bestObject;
+};
+
+const syncHoveredOutline = () => {
+  outlinePass.selectedObjects = hoveredSelectionObjects;
+};
+
+const getHoverLabelElement = (selectionId, label) => {
+  let element = hoverLabels.get(selectionId);
+
+  if (element) {
+    return element;
+  }
+
+  element = document.createElement("div");
+  element.className = "hover-label";
+  element.setAttribute("aria-hidden", "true");
+  element.textContent = label;
+  viewerShell.append(element);
+  hoverLabels.set(selectionId, element);
+  return element;
+};
+
+const updateHoverLabel = () => {
+  if (!hoveredSelectionObjects.length) {
+    if (activeHoverLabel) {
+      activeHoverLabel.classList.remove("is-visible");
+      activeHoverLabel = null;
+    }
+
+    return;
+  }
+
+  hoverLabelBounds.makeEmpty();
+
+  for (const object of hoveredSelectionObjects) {
+    hoverLabelBounds.expandByObject(object);
+  }
+
+  if (hoverLabelBounds.isEmpty()) {
+    if (activeHoverLabel) {
+      activeHoverLabel.classList.remove("is-visible");
+      activeHoverLabel = null;
+    }
+
+    return;
+  }
+
+  const hoverLabel = getHoverLabelElement(
+    hoveredSelectionId,
+    hoveredSelectionLabel,
+  );
+
+  if (activeHoverLabel && activeHoverLabel !== hoverLabel) {
+    activeHoverLabel.classList.remove("is-visible");
+  }
+
+  hoverLabel.textContent = hoveredSelectionLabel;
+  hoverLabelAnchor.set(
+    (hoverLabelBounds.min.x + hoverLabelBounds.max.x) * 0.5,
+    hoverLabelBounds.max.y +
+      Math.max(hoverLabelBounds.getSize(new THREE.Vector3()).y * 0.16, 0.08),
+    (hoverLabelBounds.min.z + hoverLabelBounds.max.z) * 0.5,
+  );
+  hoverLabelProjection.copy(hoverLabelAnchor).project(camera);
+
+  if (
+    hoverLabelProjection.z < -1 ||
+    hoverLabelProjection.z > 1 ||
+    Math.abs(hoverLabelProjection.x) > 1.15 ||
+    Math.abs(hoverLabelProjection.y) > 1.15
+  ) {
+    hoverLabel.classList.remove("is-visible");
+    if (activeHoverLabel === hoverLabel) {
+      activeHoverLabel = null;
+    }
+    return;
+  }
+
+  const x = (hoverLabelProjection.x + 1) * 0.5 * viewerShell.clientWidth;
+  const y = (1 - hoverLabelProjection.y) * 0.5 * viewerShell.clientHeight;
+
+  hoverLabel.style.setProperty("--hover-label-x", `${x}px`);
+  hoverLabel.style.setProperty("--hover-label-y", `${y}px`);
+  hoverLabel.classList.add("is-visible");
+  activeHoverLabel = hoverLabel;
+};
+
+const updatePointer = (event) => {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+};
+
+const handlePointerMove = (event) => {
+  isPointerOverCanvas = true;
+  updatePointer(event);
+};
+
+const handlePointerLeave = () => {
+  isPointerOverCanvas = false;
+  hoveredSelectionId = null;
+  hoveredSelectionObjects = [];
+  hoveredSelectionLabel = "";
+  syncHoveredOutline();
+  updateHoverLabel();
+};
+
+const updateHoveredObject = () => {
+  if (!loadedModel || !isPointerOverCanvas || hoverableMeshes.length === 0) {
+    if (hoveredSelectionId) {
+      hoveredSelectionId = null;
+      hoveredSelectionObjects = [];
+      hoveredSelectionLabel = "";
+      syncHoveredOutline();
+      updateHoverLabel();
+    }
+
+    return;
+  }
+
+  raycaster.setFromCamera(pointer, camera);
+  const [intersection] = raycaster.intersectObjects(hoverableMeshes, false);
+  const leewayObject = intersection?.object ?? getLeewayHoverObject();
+  const nextSelection = leewayObject ? getHoverSelection(leewayObject) : null;
+
+  if (nextSelection?.id === hoveredSelectionId) {
+    return;
+  }
+
+  hoveredSelectionId = nextSelection?.id ?? null;
+  hoveredSelectionObjects = nextSelection?.objects ?? [];
+  hoveredSelectionLabel = nextSelection?.label ?? "";
+  syncHoveredOutline();
+  updateHoverLabel();
+};
+
+canvas.addEventListener("pointermove", handlePointerMove);
+canvas.addEventListener("pointerleave", handlePointerLeave);
 
 const guiState = {
   laserColor: "#ff8080",
@@ -100,6 +416,16 @@ const guiState = {
   shadowOpacity: 0.16,
 };
 
+const savedViewDirections = {
+  default: new THREE.Vector3(0, 1, 0.75),
+  front: new THREE.Vector3(0, 0, 1),
+  back: new THREE.Vector3(0, 0, -1),
+  right: new THREE.Vector3(1, 0, 0),
+  left: new THREE.Vector3(-1, 0, 0),
+  top: new THREE.Vector3(0, 1, 0),
+  isoFrontRight: new THREE.Vector3(1, 0.45, 1),
+};
+
 const pmremGenerator = new THREE.PMREMGenerator(renderer);
 scene.environment = pmremGenerator.fromScene(
   new RoomEnvironment(),
@@ -120,7 +446,7 @@ scene.add(fillLight.target);
 const directionalLight = new THREE.DirectionalLight(0xfff6e8, 4);
 directionalLight.position.set(8, 14, 10);
 directionalLight.castShadow = true;
-directionalLight.shadow.mapSize.set(3200, 3200);
+directionalLight.shadow.mapSize.set(4096, 4096);
 directionalLight.shadow.bias = -0.00015;
 directionalLight.shadow.normalBias = 0.02;
 scene.add(directionalLight);
@@ -305,6 +631,8 @@ const updateLaserAnimation = (deltaMs) => {
   }
 };
 
+let applySavedView = null;
+
 const gui = new GUI({ title: "Scene Controls" });
 const meshGui = new GUI({ title: "Mesh Visibility" });
 
@@ -427,6 +755,26 @@ bloomFolder
   .name("Threshold")
   .onChange(syncBloom);
 
+const cameraFolder = gui.addFolder("Camera");
+cameraFolder
+  .add({ default: () => applySavedView?.("default") }, "default")
+  .name("Default");
+cameraFolder
+  .add({ front: () => applySavedView?.("front") }, "front")
+  .name("Front");
+cameraFolder.add({ back: () => applySavedView?.("back") }, "back").name("Back");
+cameraFolder
+  .add({ right: () => applySavedView?.("right") }, "right")
+  .name("Right");
+cameraFolder.add({ left: () => applySavedView?.("left") }, "left").name("Left");
+cameraFolder.add({ top: () => applySavedView?.("top") }, "top").name("Top");
+cameraFolder
+  .add(
+    { isoFrontRight: () => applySavedView?.("isoFrontRight") },
+    "isoFrontRight",
+  )
+  .name("Iso Front Right");
+
 syncLighting();
 syncBloom();
 
@@ -492,7 +840,17 @@ const configureShadowCamera = (light, center, radius) => {
 
 loader.load(modelUrl, (gltf) => {
   const model = gltf.scene;
+  loadedModel = model;
   scene.add(model);
+  groupedHoverObjects = [];
+
+  model.traverse((child) => {
+    const name = child.name?.toLowerCase() ?? "";
+
+    if (groupedHoverEntityNames.has(name)) {
+      groupedHoverObjects.push(child);
+    }
+  });
 
   const box = new THREE.Box3().setFromObject(model);
   const size = box.getSize(new THREE.Vector3());
@@ -505,12 +863,25 @@ loader.load(modelUrl, (gltf) => {
   model.position.y += size.y / 2;
 
   const framedCenter = new THREE.Vector3(0, size.y * 0.42, 0);
-  const viewDirection = new THREE.Vector3(1.15, 0.78, 1.25).normalize();
   const fitDistance = Math.max(radius * 1.45, 3.5);
 
-  camera.position.copy(
-    framedCenter.clone().add(viewDirection.multiplyScalar(fitDistance)),
-  );
+  applySavedView = (viewName) => {
+    const viewDirection = savedViewDirections[viewName];
+
+    if (!viewDirection) {
+      return;
+    }
+
+    camera.position.copy(
+      framedCenter
+        .clone()
+        .add(viewDirection.clone().normalize().multiplyScalar(fitDistance)),
+    );
+    controls.target.copy(framedCenter);
+    controls.update();
+  };
+
+  applySavedView("default");
   camera.near = Math.max(maxDim / 100, 0.01);
   camera.far = Math.max(maxDim * 20, 100);
   camera.updateProjectionMatrix();
@@ -540,6 +911,20 @@ loader.load(modelUrl, (gltf) => {
     const materials = Array.isArray(child.material)
       ? child.material
       : [child.material];
+
+    if (
+      belongsToGroupedHoverEntity(child) ||
+      !isOutlineExcluded(child, materials)
+    ) {
+      hoverableMeshes.push(child);
+      const sphere = new THREE.Sphere();
+      child.geometry.computeBoundingSphere();
+      sphere.copy(child.geometry.boundingSphere);
+      hoverBounds.set(child, {
+        center: sphere.center.clone(),
+        radius: sphere.radius,
+      });
+    }
 
     child.material = Array.isArray(child.material)
       ? materials.map((material) => {
@@ -597,6 +982,8 @@ const handleResize = () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   composer.setSize(window.innerWidth, window.innerHeight);
   bloomPass.setSize(window.innerWidth, window.innerHeight);
+  outlinePass.setSize(window.innerWidth, window.innerHeight);
+  updateHoverLabel();
 };
 
 window.addEventListener("resize", handleResize);
@@ -609,6 +996,8 @@ const tick = () => {
   lastFrameTime = now;
 
   controls.update();
+  updateHoveredObject();
+  updateHoverLabel();
   updateLaserAnimation(deltaMs);
   composer.render();
   window.requestAnimationFrame(tick);
