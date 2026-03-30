@@ -14,13 +14,11 @@ const app = document.querySelector("#app");
 app.innerHTML = `
   <div class="viewer-shell">
     <canvas class="viewer"></canvas>
-    <button class="focus-back" type="button">Back</button>
   </div>
 `;
 
 const viewerShell = document.querySelector(".viewer-shell");
 const canvas = document.querySelector(".viewer");
-const focusBackButton = document.querySelector(".focus-back");
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x4f4f4f);
@@ -86,6 +84,7 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const hoverableMeshes = [];
 const hoverBounds = new Map();
+const hoverDebugHelpers = new Map();
 let hoveredSelectionId = null;
 let hoveredSelectionObjects = [];
 let hoveredSelectionLabel = "";
@@ -101,13 +100,27 @@ const hoverRadiusScale = 0.28;
 const hoverLabelBounds = new THREE.Box3();
 const hoverLabelAnchor = new THREE.Vector3();
 const hoverLabelProjection = new THREE.Vector3();
-const focusBounds = new THREE.Box3();
-const focusSize = new THREE.Vector3();
-const focusCenter = new THREE.Vector3();
-const focusTarget = new THREE.Vector3();
-const focusPosition = new THREE.Vector3();
-const previousCameraPosition = new THREE.Vector3();
-const previousCameraTarget = new THREE.Vector3();
+const hoverDebugBox = new THREE.Box3();
+const hoverDebugCenter = new THREE.Vector3();
+const hoverDebugSize = new THREE.Vector3();
+const defaultHoverDebugColor = new THREE.Color("#8ec5ff");
+const activeHoverDebugColor = new THREE.Color("#ffd166");
+const defaultHoverFaceColor = new THREE.Color("#8ec5ff");
+const activeHoverFaceColor = new THREE.Color("#ffd166");
+const hoverDebugYawByCameraKey = new Map([
+  ["laser-assembly", THREE.MathUtils.degToRad(-12.5)],
+  ["fourier-lens-1", THREE.MathUtils.degToRad(12.5)],
+  ["fourier-lens-2", THREE.MathUtils.degToRad(-12.5)],
+  ["camera", THREE.MathUtils.degToRad(-12.5)],
+]);
+const hoverDebugFrontFaceByCameraKey = new Map([
+  ["laser-assembly", "south"],
+  ["dmd-1", "east"],
+  ["fourier-lens-1", "west"],
+  ["dmd-2", "west"],
+  ["fourier-lens-2", "east"],
+  ["camera", "east"],
+]);
 const hoverLabelNameRules = [
   { pattern: /dmd[\s_-]*1/i, label: "DMD 1" },
   { pattern: /dmd[\s_-]*2/i, label: "DMD 2" },
@@ -123,54 +136,6 @@ const groupedHoverEntityNames = new Set([
   "laser",
   "laserfoundation",
 ]);
-const entityCameraViews = {
-  "laser-assembly": {
-    positionOffset: [0.42, 0, 0.52],
-    targetOffset: [0, 0, 0],
-    fitMultiplier: 1.1,
-    position: { x: 9, y: 27, z: null },
-    focusTarget: { x: -9, y: 19, z: null },
-  },
-  "dmd-1": {
-    positionOffset: [0.32, 0, 0],
-    targetOffset: [0, 0, 0],
-    fitMultiplier: 0.95,
-    position: { x: null, y: 21, z: null },
-    focusTarget: { x: null, y: 20, z: null },
-  },
-  "fourier-lens-1": {
-    positionOffset: [-0.28, 0, 0],
-    targetOffset: [0, 0, 0],
-    fitMultiplier: 0.95,
-    position: {
-      x: -20,
-      y: 22,
-      z: -0.5,
-    },
-    focusTarget: { x: 0, y: 21, z: null },
-  },
-  "dmd-2": {
-    positionOffset: [-0.32, 0, 0],
-    targetOffset: [0, 0, 0],
-    fitMultiplier: 0.95,
-    position: { x: null, y: 21, z: -13 },
-    focusTarget: { x: null, y: 20, z: -13 },
-  },
-  "fourier-lens-2": {
-    positionOffset: [0.16, 0, 0.22],
-    targetOffset: [0, 0, 0],
-    fitMultiplier: 0.95,
-    position: { x: null, y: 21, z: -18.15 },
-    focusTarget: { x: null, y: 20, z: -19 },
-  },
-  camera: {
-    positionOffset: [0.22, 0, 0.28],
-    targetOffset: [0, 0, 0],
-    fitMultiplier: 1,
-    position: { x: 10, y: 21, z: null },
-    focusTarget: { x: null, y: 19, z: null },
-  },
-};
 
 const isMeaningfulNodeName = (name) => {
   if (!name) {
@@ -325,92 +290,103 @@ const syncHoveredOutline = () => {
   outlinePass.selectedObjects = hoveredSelectionObjects;
 };
 
-const syncFocusBackButton = () => {
-  focusBackButton.classList.toggle("is-visible", isFocusLocked);
-};
+const syncHoverDebugHelpers = () => {
+  for (const [selectionId, debugData] of hoverDebugHelpers) {
+    hoverDebugBox.makeEmpty();
 
-const focusCameraOnSelection = () => {
-  if (
-    isFocusLocked ||
-    !hoveredSelectionObjects.length ||
-    !hoveredSelectionCameraKey
-  ) {
-    return;
-  }
+    for (const object of debugData.objects) {
+      hoverDebugBox.expandByObject(object);
+    }
 
-  previousCameraPosition.copy(camera.position);
-  previousCameraTarget.copy(controls.target);
+    debugData.helper.visible = !hoverDebugBox.isEmpty();
 
-  focusBounds.makeEmpty();
+    if (!debugData.helper.visible) {
+      continue;
+    }
 
-  for (const object of hoveredSelectionObjects) {
-    focusBounds.expandByObject(object);
-  }
-
-  if (focusBounds.isEmpty()) {
-    return;
-  }
-
-  focusBounds.getSize(focusSize);
-  focusBounds.getCenter(focusCenter);
-
-  const preset = entityCameraViews[hoveredSelectionCameraKey] ?? {
-    positionOffset: [0.3, 0.14, 0.38],
-    targetOffset: [0, 0, 0],
-    fitMultiplier: 1,
-    position: { x: null, y: 25, z: null },
-    focusTarget: { x: null, y: 19, z: null },
-  };
-  const fitScale = Math.max(
-    Math.max(focusSize.x, focusSize.y, focusSize.z),
-    0.12,
-  );
-
-  focusTarget
-    .copy(focusCenter)
-    .add(new THREE.Vector3(...preset.targetOffset).multiplyScalar(fitScale));
-  focusPosition
-    .copy(focusCenter)
-    .add(
-      new THREE.Vector3(...preset.positionOffset).multiplyScalar(
-        fitScale * preset.fitMultiplier,
-      ),
+    hoverDebugBox.getCenter(hoverDebugCenter);
+    hoverDebugBox.getSize(hoverDebugSize);
+    debugData.helper.position.copy(hoverDebugCenter);
+    debugData.helper.scale.copy(hoverDebugSize);
+    debugData.helper.rotation.set(0, debugData.yaw, 0);
+    debugData.helper.material.color.copy(
+      selectionId === hoveredSelectionId
+        ? activeHoverDebugColor
+        : defaultHoverDebugColor,
     );
-  focusTarget.set(
-    preset.focusTarget.x ?? focusTarget.x,
-    preset.focusTarget.y ?? focusTarget.y,
-    preset.focusTarget.z ?? focusTarget.z,
-  );
-  focusPosition.set(
-    preset.position.x ?? focusPosition.x,
-    preset.position.y ?? focusPosition.y,
-    preset.position.z ?? focusPosition.z,
-  );
-
-  camera.position.copy(focusPosition);
-  controls.target.copy(focusTarget);
-  controls.update();
-  isFocusLocked = true;
-  syncFocusBackButton();
+    debugData.face.material.color.copy(
+      selectionId === hoveredSelectionId
+        ? activeHoverFaceColor
+        : defaultHoverFaceColor,
+    );
+    debugData.face.visible = true;
+    debugData.helper.updateMatrixWorld(true);
+  }
 };
 
-const exitFocusedSelection = () => {
-  if (!isFocusLocked) {
+const applyFrontFaceTransform = (faceMesh, faceName) => {
+  const offset = 0.501;
+
+  faceMesh.position.set(0, 0, 0);
+  faceMesh.rotation.set(0, 0, 0);
+
+  switch (faceName) {
+    case "east":
+      faceMesh.position.x = offset;
+      faceMesh.rotation.y = Math.PI / 2;
+      break;
+    case "west":
+      faceMesh.position.x = -offset;
+      faceMesh.rotation.y = -Math.PI / 2;
+      break;
+    case "south":
+      faceMesh.position.z = offset;
+      break;
+    case "north":
+      faceMesh.position.z = -offset;
+      faceMesh.rotation.y = Math.PI;
+      break;
+    default:
+      break;
+  }
+};
+
+const registerHoverDebugHelper = (selection) => {
+  if (!selection || hoverDebugHelpers.has(selection.id)) {
     return;
   }
 
-  camera.position.copy(previousCameraPosition);
-  controls.target.copy(previousCameraTarget);
-  controls.update();
-
-  isFocusLocked = false;
-  hoveredSelectionId = null;
-  hoveredSelectionObjects = [];
-  hoveredSelectionLabel = "";
-  hoveredSelectionCameraKey = null;
-  syncHoveredOutline();
-  updateHoverLabel();
-  syncFocusBackButton();
+  const helper = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+    new THREE.LineBasicMaterial({ color: defaultHoverDebugColor.clone() }),
+  );
+  helper.material.transparent = true;
+  helper.material.opacity = 0.95;
+  helper.material.depthTest = false;
+  helper.renderOrder = 1000;
+  const face = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshBasicMaterial({
+      color: defaultHoverFaceColor.clone(),
+      transparent: true,
+      opacity: 0.28,
+      side: THREE.DoubleSide,
+      depthTest: false,
+    }),
+  );
+  face.renderOrder = 999;
+  applyFrontFaceTransform(
+    face,
+    hoverDebugFrontFaceByCameraKey.get(selection.cameraKey) ?? "south",
+  );
+  helper.add(face);
+  scene.add(helper);
+  hoverDebugHelpers.set(selection.id, {
+    helper,
+    face,
+    objects: selection.objects,
+    yaw: hoverDebugYawByCameraKey.get(selection.cameraKey) ?? 0,
+  });
 };
 
 const getHoverLabelElement = (selectionId, label) => {
@@ -505,10 +481,6 @@ const handlePointerMove = (event) => {
   updatePointer(event);
 };
 
-const handleCanvasClick = () => {
-  focusCameraOnSelection();
-};
-
 const handlePointerLeave = () => {
   if (isFocusLocked) {
     return;
@@ -555,13 +527,12 @@ const updateHoveredObject = () => {
   hoveredSelectionLabel = nextSelection?.label ?? "";
   hoveredSelectionCameraKey = nextSelection?.cameraKey ?? null;
   syncHoveredOutline();
+  syncHoverDebugHelpers();
   updateHoverLabel();
 };
 
 canvas.addEventListener("pointermove", handlePointerMove);
 canvas.addEventListener("pointerleave", handlePointerLeave);
-canvas.addEventListener("click", handleCanvasClick);
-focusBackButton.addEventListener("click", exitFocusedSelection);
 
 const guiState = {
   laserColor: "#ff8080",
@@ -1101,6 +1072,7 @@ loader.load(modelUrl, (gltf) => {
         center: sphere.center.clone(),
         radius: sphere.radius,
       });
+      registerHoverDebugHelper(getHoverSelection(child));
     }
 
     child.material = Array.isArray(child.material)
@@ -1147,6 +1119,7 @@ loader.load(modelUrl, (gltf) => {
   controls.minDistance = Math.max(radius * 0.12, 0.35);
   controls.maxDistance = Math.max(radius * 8, 30);
   controls.update();
+  syncHoverDebugHelpers();
   syncLaserMaterials();
   syncLighting();
   registerMeshVisibilityControls(model);
@@ -1173,6 +1146,7 @@ const tick = () => {
   lastFrameTime = now;
 
   controls.update();
+  syncHoverDebugHelpers();
   updateHoveredObject();
   updateHoverLabel();
   updateLaserAnimation(deltaMs);
