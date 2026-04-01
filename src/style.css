@@ -35,11 +35,198 @@ body {
     background: transparent;
 }
 
-.focus-back {
+.focus-controls {
     position: absolute;
     top: 1rem;
     left: 1rem;
     z-index: 6;
+    display: flex;
+    gap: 0.55rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+}
+
+.focus-controls.is-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.focus-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 6;
+    width: min(38rem, 44vw);
+    padding: 1.5rem 1.4rem 1.6rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 0.9rem;
+    overflow-y: auto;
+    color: #f8fbff;
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+    background: linear-gradient(
+        180deg,
+        rgba(22, 22, 22, 0.76),
+        rgba(10, 10, 10, 0.68)
+    );
+    box-shadow: -18px 0 40px rgba(0, 0, 0, 0.18);
+    backdrop-filter: blur(8px);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(18px);
+    transition:
+        opacity 280ms ease,
+        transform 280ms ease;
+}
+
+.focus-panel.is-visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+}
+
+.focus-panel-title,
+.focus-panel-body {
+    margin: 0;
+}
+
+.focus-panel-title,
+.focus-panel-body,
+.focus-panel-toolbar,
+.focus-panel-media {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.focus-panel.is-content-entering .focus-panel-title,
+.focus-panel.is-content-entering .focus-panel-body,
+.focus-panel.is-content-entering .focus-panel-toolbar,
+.focus-panel.is-content-entering .focus-panel-media {
+    animation: focus-panel-content-enter 280ms ease;
+}
+
+@keyframes focus-panel-content-enter {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.focus-panel-title {
+    font-size: 1.45rem;
+    line-height: 1.1;
+    font-weight: 500;
+}
+
+.focus-panel-body {
+    color: rgba(248, 251, 255, 0.88);
+    font-size: 0.98rem;
+    line-height: 1.65;
+}
+
+.focus-panel-body-paragraph,
+.focus-panel-body-list {
+    margin: 0;
+}
+
+.focus-panel-body-paragraph {
+    margin-bottom: 0.95rem;
+}
+
+.focus-panel-body-list {
+    padding-left: 1.2rem;
+}
+
+.focus-panel-body-list li + li {
+    margin-top: 0.85rem;
+}
+
+.focus-panel-body-list strong {
+    font-weight: 700;
+}
+
+.focus-panel-toolbar {
+    display: none;
+    align-items: center;
+    gap: 0.7rem;
+}
+
+.focus-panel-toolbar.is-visible {
+    display: flex;
+}
+
+.focus-panel-kernel-label {
+    color: rgba(248, 251, 255, 0.82);
+    font-size: 0.84rem;
+    line-height: 1.2;
+}
+
+.focus-panel-kernel-select {
+    min-width: 9rem;
+    padding: 0.38rem 0.5rem;
+    color: #f8fbff;
+    font-size: 0.84rem;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.focus-panel-media {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.8rem;
+}
+
+.focus-panel-media-card {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.focus-panel-media-card.is-full {
+    grid-column: 1 / -1;
+    width: calc(50% - 0.4rem);
+    justify-self: center;
+}
+
+.focus-panel-media-image {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.focus-panel-media-item-caption {
+    margin: 0;
+    color: rgba(248, 251, 255, 0.7);
+    font-size: 0.84rem;
+    line-height: 1.4;
+    letter-spacing: 0.03em;
+    text-align: center;
+}
+
+.focus-panel-media-caption {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: rgba(248, 251, 255, 0.7);
+    font-size: 0.84rem;
+    line-height: 1.4;
+    letter-spacing: 0.03em;
+    text-align: center;
+}
+
+.focus-back,
+.focus-nav {
     padding: 0.45rem 0.7rem;
     color: #f8fbff;
     font-size: 0.8rem;
@@ -48,15 +235,40 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.22);
     border-radius: 0;
     background: rgba(10, 16, 24, 0.82);
-    opacity: 0;
-    pointer-events: none;
     cursor: pointer;
-    transition: opacity 120ms ease;
+    transition:
+        opacity 120ms ease,
+        background-color 120ms ease,
+        border-color 120ms ease;
 }
 
-.focus-back.is-visible {
-    opacity: 1;
-    pointer-events: auto;
+.focus-back:hover,
+.focus-nav:hover:not(:disabled) {
+    background: rgba(22, 32, 46, 0.9);
+    border-color: rgba(255, 255, 255, 0.32);
+}
+
+.focus-nav:disabled {
+    opacity: 0.36;
+    cursor: default;
+}
+
+@media (max-width: 720px) {
+    .focus-panel {
+        top: auto;
+        right: 0.75rem;
+        bottom: 0.75rem;
+        left: 0.75rem;
+        width: auto;
+        max-height: min(44vh, 24rem);
+        padding: 1rem 1rem 1.05rem;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: 0 -18px 36px rgba(0, 0, 0, 0.2);
+    }
+
+    .focus-panel-media {
+        grid-template-columns: 1fr;
+    }
 }
 
 .hover-label {
@@ -91,6 +303,10 @@ body {
 .hover-label.is-visible {
     opacity: 1;
     transform: translate(-50%, -100%);
+}
+
+.hover-label.is-active {
+    color: #ff5c5c;
 }
 
 .hud {
