@@ -53,59 +53,40 @@ const focusPanelKernelSelect = document.querySelector(
 const focusPanelMedia = document.querySelector(".focus-panel-media");
 let focusPanelTransitionFrame = null;
 let focusPanelTransitionTimeout = null;
-const dmdInputTextureUrl = new URL(
-  "../frame_100_endo/01_input_bgr.png",
-  import.meta.url,
-).href;
-const dmdClaheTextureUrl = new URL(
-  "../frame_100_endo/02_gray_clahe.png",
-  import.meta.url,
-).href;
-const fft1TextureUrl = new URL("../fft1.png", import.meta.url).href;
-const dmd2RampTextureUrl = new URL(
-  "../dmd_laplacian_3bit_fast_ramp.png",
-  import.meta.url,
-).href;
-const laplacianFeatureTextureUrl = new URL(
-  "../laplacianfft.png",
-  import.meta.url,
-).href;
-const laplacianFeatureIntensityTextureUrl = new URL(
-  "../frame_100_endo/04_feature_laplacian_intensity.png",
-  import.meta.url,
-).href;
-const predColorOrigsizeTextureUrl = new URL(
-  "../frame_100_endo/09_pred_color_origsize.png",
-  import.meta.url,
-).href;
-const overlayOrigsizeTextureUrl = new URL(
-  "../frame_100_endo/10_overlay_origsize.png",
-  import.meta.url,
-).href;
+const assetPath = (path) => `/assets/${path}`;
+const dmdInputTextureUrl = assetPath("images/frame-100-endo/input-bgr.png");
+const dmdClaheTextureUrl = assetPath("images/frame-100-endo/gray-clahe.png");
+const fft1TextureUrl = assetPath("images/fourier/input-dft.png");
+const dmd2RampTextureUrl = assetPath(
+  "images/dmd/laplacian-3bit-fast-ramp.png",
+);
+const laplacianFeatureTextureUrl = assetPath(
+  "images/fourier/laplacian-fft.png",
+);
+const laplacianFeatureIntensityTextureUrl = assetPath(
+  "images/frame-100-endo/feature-laplacian-intensity.png",
+);
+const predColorOrigsizeTextureUrl = assetPath(
+  "images/frame-100-endo/pred-color-origsize.png",
+);
+const overlayOrigsizeTextureUrl = assetPath(
+  "images/frame-100-endo/overlay-origsize.png",
+);
 const kernelMediaByKey = {
   laplacian: {
-    dmd: new URL("../dmd_laplacian_3bit_fast_ramp.png", import.meta.url).href,
-    fft: new URL("../laplacianfft.png", import.meta.url).href,
-    feature: new URL(
-      "../frame_100_endo/04_feature_laplacian_intensity.png",
-      import.meta.url,
-    ).href,
+    dmd: dmd2RampTextureUrl,
+    fft: laplacianFeatureTextureUrl,
+    feature: laplacianFeatureIntensityTextureUrl,
   },
   "sobel-x": {
-    dmd: new URL("../dmd_sobel_x_3bit_fast_ramp.png", import.meta.url).href,
-    fft: new URL("../sobelxfft.png", import.meta.url).href,
-    feature: new URL(
-      "../frame_100_endo/04_feature_sobel_x_intensity.png",
-      import.meta.url,
-    ).href,
+    dmd: assetPath("images/dmd/sobel-x-3bit-fast-ramp.png"),
+    fft: assetPath("images/fourier/sobel-x-fft.png"),
+    feature: assetPath("images/frame-100-endo/feature-sobel-x-intensity.png"),
   },
   "sobel-y": {
-    dmd: new URL("../dmd_sobel_y_3bit_fast_ramp.png", import.meta.url).href,
-    fft: new URL("../sobelyfft.png", import.meta.url).href,
-    feature: new URL(
-      "../frame_100_endo/04_feature_sobel_y_intensity.png",
-      import.meta.url,
-    ).href,
+    dmd: assetPath("images/dmd/sobel-y-3bit-fast-ramp.png"),
+    fft: assetPath("images/fourier/sobel-y-fft.png"),
+    feature: assetPath("images/frame-100-endo/feature-sobel-y-intensity.png"),
   },
 };
 const kernelSelectableCameraKeys = new Set([
@@ -411,14 +392,8 @@ const activeHoverDebugColor = new THREE.Color("#ffd166");
 const defaultHoverFaceColor = new THREE.Color("#8ec5ff");
 const activeHoverFaceColor = new THREE.Color("#ffd166");
 const showHoverDebugHelpers = false;
-const dmdFace1TextureUrl = new URL(
-  "../frame_100_endo/02_gray_clahe.png",
-  import.meta.url,
-).href;
-const dmdFace2TextureUrl = new URL(
-  "../dmd_laplacian_3bit_fast_ramp.png",
-  import.meta.url,
-).href;
+const dmdFace1TextureUrl = dmdClaheTextureUrl;
+const dmdFace2TextureUrl = dmd2RampTextureUrl;
 const hoverDebugYawByCameraKey = new Map([
   ["laser-assembly", THREE.MathUtils.degToRad(-12.5)],
   ["fourier-lens-1", THREE.MathUtils.degToRad(12.5)],
@@ -1930,7 +1905,7 @@ shadowCatcher.receiveShadow = true;
 scene.add(shadowCatcher);
 
 const loader = new GLTFLoader();
-const modelUrl = new URL("../capstone.glb", import.meta.url).href;
+const modelUrl = assetPath("models/capstone.glb");
 
 const isGlassMaterial = (material) => {
   if (!material) {
