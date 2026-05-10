@@ -19,6 +19,92 @@ app.innerHTML = `
       <button class="focus-nav focus-prev" type="button">&lt;</button>
       <button class="focus-nav focus-next" type="button">&gt;</button>
     </div>
+    <button
+      class="help-toggle"
+      type="button"
+      aria-controls="help-panel"
+      aria-expanded="false"
+    >
+      Help
+    </button>
+    <aside class="help-panel" id="help-panel" aria-hidden="true">
+      <div class="help-panel-header">
+        <h2>How to Navigate</h2>
+        <button class="help-close" type="button" aria-label="Close help">
+          &times;
+        </button>
+      </div>
+      <div class="help-section">
+        <h3>Mouse</h3>
+        <dl>
+          <div>
+            <dt>Drag</dt>
+            <dd>Orbit around the model.</dd>
+          </div>
+          <div>
+            <dt>Right drag</dt>
+            <dd>Pan the camera.</dd>
+          </div>
+          <div>
+            <dt>Scroll</dt>
+            <dd>Zoom in & out.</dd>
+          </div>
+          <div>
+            <dt>Click a label</dt>
+            <dd>Focus optical component and show explainer panel.</dd>
+          </div>
+        </dl>
+      </div>
+      <div class="help-section">
+        <h3>Keyboard</h3>
+        <dl>
+          <div>
+            <dt>Left / Right</dt>
+            <dd>Cycle views.</dd>
+          </div>
+          <div>
+            <dt>Up</dt>
+            <dd>Top view.</dd>
+          </div>
+          <div>
+            <dt>R</dt>
+            <dd>Reset to the default overview.</dd>
+          </div>
+          <div>
+            <dt>O</dt>
+            <dd>Toggle auto-orbit.</dd>
+          </div>
+          <div>
+            <dt>C</dt>
+            <dd> Hide UI while focused.</dd>
+          </div>
+          <div>
+            <dt>X</dt>
+            <dd>Cycle kernels.</dd>
+          </div>
+          <div>
+            <dt>Z</dt>
+            <dd>Toggle all hover labels.</dd>
+          </div>
+          <div>
+            <dt>L</dt>
+            <dd>Turn on laser.</dd>
+          </div>
+          <div>
+            <dt>K</dt>
+            <dd>Kill laser.</dd>
+          </div>
+          <div>
+            <dt>Shift + L</dt>
+            <dd>Show or hide debug control panels.</dd>
+          </div>
+          <div>
+            <dt>Esc</dt>
+            <dd>Close help menu.</dd>
+          </div>
+        </dl>
+      </div>
+    </aside>
     <aside class="focus-panel">
       <h2 class="focus-panel-title"></h2>
       <div class="focus-panel-body"></div>
@@ -43,6 +129,9 @@ const focusControls = document.querySelector(".focus-controls");
 const focusPrevButton = document.querySelector(".focus-prev");
 const focusBackButton = document.querySelector(".focus-back");
 const focusNextButton = document.querySelector(".focus-next");
+const helpToggleButton = document.querySelector(".help-toggle");
+const helpCloseButton = document.querySelector(".help-close");
+const helpPanel = document.querySelector(".help-panel");
 const focusPanel = document.querySelector(".focus-panel");
 const focusPanelTitle = document.querySelector(".focus-panel-title");
 const focusPanelBody = document.querySelector(".focus-panel-body");
@@ -53,13 +142,15 @@ const focusPanelKernelSelect = document.querySelector(
 const focusPanelMedia = document.querySelector(".focus-panel-media");
 let focusPanelTransitionFrame = null;
 let focusPanelTransitionTimeout = null;
+let lastRenderedFocusPanelKey = null;
+let wasFocusPanelVisible = false;
+let initialLaserAnimationTimeout = null;
+let hasInitialLaserAnimationStarted = false;
 const assetPath = (path) => `/assets/${path}`;
 const dmdInputTextureUrl = assetPath("images/frame-100-endo/input-bgr.png");
 const dmdClaheTextureUrl = assetPath("images/frame-100-endo/gray-clahe.png");
 const fft1TextureUrl = assetPath("images/fourier/input-dft.png");
-const dmd2RampTextureUrl = assetPath(
-  "images/dmd/laplacian-3bit-fast-ramp.png",
-);
+const dmd2RampTextureUrl = assetPath("images/dmd/laplacian-3bit-fast-ramp.png");
 const laplacianFeatureTextureUrl = assetPath(
   "images/fourier/laplacian-fft.png",
 );
@@ -72,6 +163,7 @@ const predColorOrigsizeTextureUrl = assetPath(
 const overlayOrigsizeTextureUrl = assetPath(
   "images/frame-100-endo/overlay-origsize.png",
 );
+const opticSurgLogoTextureUrl = assetPath("images/branding/opticsurg.png");
 const kernelMediaByKey = {
   laplacian: {
     dmd: dmd2RampTextureUrl,
@@ -228,14 +320,25 @@ const focusInfoByCameraKey = new Map([
     "dmd-1",
     {
       title: "2. DMD 1",
-      body: "The first Digital Micromirror Device (DMD) spatially patterns the beam, shaping the laser to represent the input image by controlling downstream light.",
+      bodyLead:
+        "The first Digital Micromirror Device (DMD) spatially patterns the laser beam using the original surgical image before downstream 4F optical processing. Similar to how LED and LCD displays render images with a grid of pixels, a DMD uses an array of microscopic mirrors to form the displayed image. This same technology is widely used in digital projectors, where the mirrors rapidly tilt to direct light and reproduce projected images.",
+      bodyBullets: [
+        "Input: A uniform beam of light from the laser assembly.",
+        "Operation: A grayscale-modified surgical image displayed by tilting individual mirrors of the DMD array.",
+        "Purpose: Bright and dark regions in the image become bright and dark regions in the optical field, so image information is now carried by light. If you were to shine the outgoing laser on a surface, you would be able to see the projected image on that surface.",
+      ],
       mediaCaption:
-        "Left: Original surgical image; Right: normalized image for optical modulation.",
+        "The raw laparoscopic frame is first converted into a contrast-enhanced grayscale image so the DMD can modulate a cleaner, normalized optical pattern.",
       media: [
-        { src: dmdInputTextureUrl, alt: "01_input_bgr" },
+        {
+          src: dmdInputTextureUrl,
+          alt: "01_input_bgr",
+          label: "Original RGB surgical frame",
+        },
         {
           src: dmdClaheTextureUrl,
           alt: "02_gray_clahe",
+          label: "Contrast-enhanced grayscale image sent to DMD 1",
         },
       ],
     },
@@ -244,12 +347,26 @@ const focusInfoByCameraKey = new Map([
     "fourier-lens-1",
     {
       title: "3. Fourier Lens 1",
-      body: "Performs the first Fourier transform of the patterned beam. It converts spatial structure from the first modulation stage into its frequency-domain distribution.",
+      bodyLead:
+        "The first Fourier lens converts the image-shaped beam into its frequency representation at its focal plane (Fourier plane).",
+      bodyBullets: [
+        "What changes: Spatial structures in the image become frequency components in the Fourier plane.",
+        "How to read it: Fine detail and sharp edges appear as higher-frequency energy (outer portion of square), while broad smooth regions stay near the center.",
+        "Why it matters: The next processing stage can filter image features by manipulating these frequencies directly.",
+      ],
       mediaCaption:
-        "Left: Normalized surgical image; Right: Discrete Fourier transform of image.",
+        "The image pattern from DMD 1 is rearranged into a frequency map, exposing which spatial frequencies dominate the scene.",
       media: [
-        { src: dmdClaheTextureUrl, alt: "02_gray_clahe" },
-        { src: fft1TextureUrl, alt: "fft1" },
+        {
+          src: dmdClaheTextureUrl,
+          alt: "02_gray_clahe",
+          label: "Image encoded on DMD 1",
+        },
+        {
+          src: fft1TextureUrl,
+          alt: "fft1",
+          label: "Fourier-domain intensity pattern after Lens 1",
+        },
       ],
     },
   ],
@@ -257,13 +374,20 @@ const focusInfoByCameraKey = new Map([
     "dmd-2",
     {
       title: "4. DMD 2",
-      body: "Applies a second programmable modulation at the Fourier plane, where the frequency domain image is filtered by the kernel to selectively reweight frequency components before final imaging.",
+      bodyLead:
+        "The second Digital Micromirror Device (DMD) displays the selected optical kernel in the Fourier plane, where the reflected light is multiplicatively modulated by the kernel pattern to perform optical convolution.",
+
+      bodyBullets: [
+        "Input: The frequency-domain light field produced by the first Fourier lens.",
+        "Operation: As the Fourier-transformed light reflects from the DMD, each spatial frequency component is scaled according to the displayed Sobel or Laplacian kernel pattern, implementing frequency-domain multiplication optically.",
+        "Purpose: This optical filtering stage selectively amplifies or suppresses structural information, such as edges and curvature, before the signal is transformed back into the image domain.",
+      ],
       getMediaCaption: (kernelKey) =>
         kernelKey === "laplacian"
-          ? "Left: DFT of image; Right: Modulated DFT using Laplacian kernel"
+          ? "The Fourier-plane image is multiplied by the Laplacian kernel, emphasizing frequency content tied to sharp local intensity changes."
           : kernelKey === "sobel-x"
-            ? "Left: DFT of image; Right: Modulated DFT using Sobel X kernel"
-            : "Left: DFT of image; Right: Modulated DFT using Sobel Y kernel",
+            ? "The Fourier-plane image is multiplied by the Sobel X kernel, biasing the system toward horizontal intensity transitions."
+            : "The Fourier-plane image is multiplied by the Sobel Y kernel, biasing the system toward vertical intensity transitions.",
       getMedia: (kernelKey) => [
         {
           src: kernelMediaByKey[kernelKey].dmd,
@@ -271,15 +395,20 @@ const focusInfoByCameraKey = new Map([
           span: "full",
           label:
             kernelKey === "laplacian"
-              ? "Laplacian kernel in Fourier domain"
+              ? "Laplacian kernel pattern displayed on DMD 2"
               : kernelKey === "sobel-x"
-                ? "Sobel X kernel in Fourier domain"
-                : "Sobel Y kernel in Fourier domain",
+                ? "Sobel X kernel pattern displayed on DMD 2"
+                : "Sobel Y kernel pattern displayed on DMD 2",
         },
-        { src: fft1TextureUrl, alt: "fft1" },
+        {
+          src: fft1TextureUrl,
+          alt: "fft1",
+          label: "Incoming Fourier-plane image",
+        },
         {
           src: kernelMediaByKey[kernelKey].fft,
           alt: `${kernelKey}_fft`,
+          label: "Frequency map after kernel modulation",
         },
       ],
     },
@@ -288,14 +417,29 @@ const focusInfoByCameraKey = new Map([
     "fourier-lens-2",
     {
       title: "5. Fourier Lens 2",
-      body: "Performs an inverse Fourier transform, converting the modulated frequency-domain field back into the spatial domain at the camera sensor.",
+      bodyLead:
+        "The second Fourier lens converts the filtered frequency pattern back into an image-space response.",
+      bodyBullets: [
+        "What changes: The modulated spectrum is transformed back from frequency space into spatial intensity.",
+        "What appears: The output is now a feature map rather than a natural-looking image.",
+        "Why it matters: This is the optical convolution result produced by the selected kernel.",
+      ],
       getMediaCaption: (kernelKey) =>
-        `${getFourierLens2LeftCaption(kernelKey)}; ${getFourierLens2RightCaption(kernelKey)}`,
+        kernelKey === "laplacian"
+          ? "The Laplacian-filtered spectrum is converted into a spatial response that highlights abrupt local changes and fine boundaries."
+          : kernelKey === "sobel-x"
+            ? "The Sobel X-filtered spectrum becomes a spatial feature map that responds strongly to horizontal intensity changes."
+            : "The Sobel Y-filtered spectrum becomes a spatial feature map that responds strongly to vertical intensity changes.",
       getMedia: (kernelKey) => [
-        { src: kernelMediaByKey[kernelKey].fft, alt: `${kernelKey}_fft` },
+        {
+          src: kernelMediaByKey[kernelKey].fft,
+          alt: `${kernelKey}_fft`,
+          label: getFourierLens2LeftCaption(kernelKey),
+        },
         {
           src: kernelMediaByKey[kernelKey].feature,
           alt: `${kernelKey}_feature`,
+          label: getFourierLens2RightCaption(kernelKey),
         },
       ],
     },
@@ -304,30 +448,55 @@ const focusInfoByCameraKey = new Map([
     "camera",
     {
       title: "6. Camera",
-      body: "Captures the resulting convolved feature maps and forwards them to the digital segmentation head to produce a prediction mask for overlay visualization.",
+      bodyLead:
+        "The camera captures the optically processed feature maps, which are then passed to the downstream segmentation head to generate the final tissue mask.",
+
+      bodyBullets: [
+        "Input captured: The convolved feature maps reconstructed by the optical 4F system.",
+        "Segmentation stage: The model combines the optical feature channels to produce per-pixel tissue class predictions.",
+        "Purpose: This stage converts the optical computation into a final segmentation output that can be directly compared with the ground-truth surgical scene.",
+      ],
       getMediaRows: (kernelKey) => [
         {
           items: [
             {
               src: kernelMediaByKey[kernelKey].feature,
               alt: `${kernelKey}_feature`,
+              label:
+                kernelKey === "laplacian"
+                  ? "Recorded Laplacian feature map"
+                  : kernelKey === "sobel-x"
+                    ? "Recorded Sobel X feature map"
+                    : "Recorded Sobel Y feature map",
             },
-            { src: predColorOrigsizeTextureUrl, alt: "09_pred_color_origsize" },
+            {
+              src: predColorOrigsizeTextureUrl,
+              alt: "09_pred_color_origsize",
+              label: "Colorized segmentation prediction",
+            },
           ],
           caption:
             kernelKey === "laplacian"
-              ? "Left: Laplacian feature map;  Right: Class prediction mask"
+              ? "The Laplacian response is one optical feature channel that helps the segmentation head infer tissue boundaries and class regions."
               : kernelKey === "sobel-x"
-                ? "Left: Sobel X feature map;  Right: Class prediction mask"
-                : "Left: Sobel Y feature map;  Right: Class prediction mask",
+                ? "The Sobel X response provides horizontal edge evidence that contributes to the final per-pixel class prediction."
+                : "The Sobel Y response provides vertical edge evidence that contributes to the final per-pixel class prediction.",
         },
         {
           items: [
-            { src: dmdInputTextureUrl, alt: "01_input_bgr" },
-            { src: overlayOrigsizeTextureUrl, alt: "10_overlay_origsize" },
+            {
+              src: dmdInputTextureUrl,
+              alt: "01_input_bgr",
+              label: "Original surgical frame",
+            },
+            {
+              src: overlayOrigsizeTextureUrl,
+              alt: "10_overlay_origsize",
+              label: "Prediction overlaid on the original frame",
+            },
           ],
           caption:
-            "Left: Original surgical image; Right: Original image with segmentation mask overlay",
+            "The final overlay places the predicted segmentation back onto the original frame so readers can see where the model believes each structure is located.",
         },
       ],
     },
@@ -799,45 +968,53 @@ const syncFocusPanel = () => {
   const mediaCaption = info?.getMediaCaption
     ? info.getMediaCaption(selectedKernelKey)
     : info?.mediaCaption;
+  const shouldRenderStaticContent =
+    showPanel &&
+    (currentFocusedCameraKey !== lastRenderedFocusPanelKey ||
+      !wasFocusPanelVisible);
 
   focusPanel.classList.toggle("is-visible", showPanel);
-  focusPanelTitle.textContent = info?.title ?? "";
-  focusPanelBody.replaceChildren();
-
-  if (info?.bodyLead || info?.bodyBullets?.length) {
-    if (info.bodyLead) {
-      const lead = document.createElement("p");
-      lead.className = "focus-panel-body-paragraph";
-      lead.textContent = info.bodyLead;
-      focusPanelBody.append(lead);
-    }
-
-    if (info.bodyBullets?.length) {
-      const list = document.createElement("ul");
-      list.className = "focus-panel-body-list";
-
-      for (const item of info.bodyBullets) {
-        const listItem = document.createElement("li");
-        const separatorIndex = item.indexOf(":");
-
-        if (separatorIndex !== -1) {
-          const label = document.createElement("strong");
-          label.textContent = item.slice(0, separatorIndex + 1);
-          listItem.append(label, ` ${item.slice(separatorIndex + 1).trim()}`);
-        } else {
-          listItem.textContent = item;
-        }
-
-        list.append(listItem);
-      }
-
-      focusPanelBody.append(list);
-    }
-  } else {
-    focusPanelBody.textContent = info?.body ?? "";
-  }
   focusPanelToolbar.classList.toggle("is-visible", showKernelSelector);
   focusPanelKernelSelect.value = selectedKernelKey;
+
+  if (shouldRenderStaticContent) {
+    focusPanelTitle.textContent = info?.title ?? "";
+    focusPanelBody.replaceChildren();
+
+    if (info?.bodyLead || info?.bodyBullets?.length) {
+      if (info.bodyLead) {
+        const lead = document.createElement("p");
+        lead.className = "focus-panel-body-paragraph";
+        lead.textContent = info.bodyLead;
+        focusPanelBody.append(lead);
+      }
+
+      if (info.bodyBullets?.length) {
+        const list = document.createElement("ul");
+        list.className = "focus-panel-body-list";
+
+        for (const item of info.bodyBullets) {
+          const listItem = document.createElement("li");
+          const separatorIndex = item.indexOf(":");
+
+          if (separatorIndex !== -1) {
+            const label = document.createElement("strong");
+            label.textContent = item.slice(0, separatorIndex + 1);
+            listItem.append(label, ` ${item.slice(separatorIndex + 1).trim()}`);
+          } else {
+            listItem.textContent = item;
+          }
+
+          list.append(listItem);
+        }
+
+        focusPanelBody.append(list);
+      }
+    } else {
+      focusPanelBody.textContent = info?.body ?? "";
+    }
+  }
+
   focusPanelMedia.replaceChildren();
 
   const appendMediaItem = (mediaItem) => {
@@ -900,7 +1077,7 @@ const syncFocusPanel = () => {
     focusPanelTransitionTimeout = null;
   }
 
-  if (showPanel) {
+  if (shouldRenderStaticContent) {
     focusPanel.classList.remove("is-content-entering");
     void focusPanel.offsetWidth;
     focusPanel.classList.add("is-content-entering");
@@ -913,6 +1090,8 @@ const syncFocusPanel = () => {
     });
   }
 
+  lastRenderedFocusPanelKey = showPanel ? currentFocusedCameraKey : null;
+  wasFocusPanelVisible = showPanel;
   syncCameraViewOffset();
 };
 
@@ -1476,6 +1655,12 @@ const handleKeyDown = (event) => {
     /^(INPUT|TEXTAREA|SELECT)$/i.test(activeTagName) ||
     document.activeElement?.isContentEditable;
 
+  if (event.code === "Escape" && helpPanel.classList.contains("is-visible")) {
+    event.preventDefault();
+    setHelpPanelVisible(false);
+    return;
+  }
+
   if (isTypingIntoControl) {
     return;
   }
@@ -1826,6 +2011,15 @@ canvas.addEventListener("click", focusCameraOnSelection);
 focusPrevButton.addEventListener("click", () => stepFocusedSelection(-1));
 focusBackButton.addEventListener("click", exitFocusedSelection);
 focusNextButton.addEventListener("click", () => stepFocusedSelection(1));
+const setHelpPanelVisible = (isVisible) => {
+  helpPanel.classList.toggle("is-visible", isVisible);
+  helpPanel.setAttribute("aria-hidden", String(!isVisible));
+  helpToggleButton.setAttribute("aria-expanded", String(isVisible));
+};
+helpToggleButton.addEventListener("click", () => {
+  setHelpPanelVisible(!helpPanel.classList.contains("is-visible"));
+});
+helpCloseButton.addEventListener("click", () => setHelpPanelVisible(false));
 window.addEventListener("keydown", handleKeyDown);
 
 const guiState = {
@@ -2048,6 +2242,12 @@ const syncBloom = () => {
 };
 
 const startLaserAnimation = () => {
+  if (initialLaserAnimationTimeout !== null) {
+    clearTimeout(initialLaserAnimationTimeout);
+    initialLaserAnimationTimeout = null;
+  }
+  hasInitialLaserAnimationStarted = true;
+
   const sequence = ["OGLAZ", "OGLAZ2", "DMD1", "DMD2"]
     .map((name) => laserAnimationTargets.get(name))
     .filter(Boolean);
@@ -2382,6 +2582,49 @@ const configureShadowCamera = (light, center, radius) => {
   shadowCamera.updateProjectionMatrix();
 };
 
+const addOpticSurgLogoToFoundation = (model) => {
+  const foundation = model.getObjectByName("found");
+
+  if (!foundation) {
+    return;
+  }
+
+  const bounds = new THREE.Box3().setFromObject(foundation);
+  const size = bounds.getSize(new THREE.Vector3());
+  const logoAspect = 2731 / 1222;
+  const logoWidth = Math.min(size.x * 0.32, 38);
+  const logoHeight = logoWidth / logoAspect;
+  const marginX = size.x * 0.08;
+  const marginZ = size.z * 0.08;
+  const logoTexture = textureLoader.load(opticSurgLogoTextureUrl);
+  logoTexture.colorSpace = THREE.SRGBColorSpace;
+
+  const logo = new THREE.Mesh(
+    new THREE.PlaneGeometry(logoWidth, logoHeight),
+    new THREE.MeshBasicMaterial({
+      map: logoTexture,
+      transparent: false,
+      opacity: 1,
+      depthWrite: false,
+      toneMapped: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    }),
+  );
+
+  logo.name = "opticsurg-logo";
+  logo.rotation.x = -Math.PI / 2;
+  logo.position.set(
+    bounds.max.x - marginX - logoWidth / 2,
+    bounds.max.y + 0.035,
+    bounds.max.z - marginZ - logoHeight / 2,
+  );
+  logo.renderOrder = 2;
+  logo.raycast = () => null;
+  scene.add(logo);
+};
+
 loader.load(modelUrl, (gltf) => {
   const model = gltf.scene;
   loadedModel = model;
@@ -2419,6 +2662,8 @@ loader.load(modelUrl, (gltf) => {
 
   model.position.sub(center);
   model.position.y += size.y / 2;
+  model.updateMatrixWorld(true);
+  addOpticSurgLogoToFoundation(model);
 
   const framedCenter = new THREE.Vector3(0, size.y * 0.42, 0);
   const fitDistance = Math.max(radius * 1.45, 3.5);
@@ -2626,6 +2871,16 @@ loader.load(modelUrl, (gltf) => {
   syncLighting();
   registerMeshVisibilityControls(model);
   registerLaserAnimationTargets(model);
+
+  if (!hasInitialLaserAnimationStarted) {
+    initialLaserAnimationTimeout = window.setTimeout(() => {
+      initialLaserAnimationTimeout = null;
+
+      if (!hasInitialLaserAnimationStarted) {
+        startLaserAnimation();
+      }
+    }, 1000);
+  }
 });
 
 const handleResize = () => {
