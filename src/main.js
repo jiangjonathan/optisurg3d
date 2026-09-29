@@ -583,6 +583,8 @@ let currentCameraViewOffsetX = 0;
 let currentCameraViewOffsetY = 0;
 let pointerDownPos = { x: 0, y: 0 };
 let pointerDownTime = 0;
+let pointerMaxMove = 0;
+let lastTapTimestamp = 0;
 let isDraggingPointer = false;
 let syncToolbarStates = null;
 const hoverPixelLeeway = 2;
@@ -869,7 +871,11 @@ const getHoverSelection = (object) => {
   };
 };
 
-const getLeewayHoverObject = () => {
+const getLeewayHoverObject = (
+  pointerCoords = pointer,
+  extraPixelLeeway = 0,
+  radiusScale = hoverRadiusScale,
+) => {
   if (!loadedModel) {
     return null;
   }
@@ -910,12 +916,15 @@ const getLeewayHoverObject = () => {
           (1 - projectedRadiusPoint.y) * 0.5 * canvasHeight - centerY,
         ),
         6,
-      ) * hoverRadiusScale;
-    const pointerX = (pointer.x + 1) * 0.5 * canvasWidth;
-    const pointerY = (1 - pointer.y) * 0.5 * canvasHeight;
+      ) * radiusScale;
+    const pointerX = (pointerCoords.x + 1) * 0.5 * canvasWidth;
+    const pointerY = (1 - pointerCoords.y) * 0.5 * canvasHeight;
     const distance = Math.hypot(pointerX - centerX, pointerY - centerY);
 
-    if (distance <= radiusPx + hoverPixelLeeway && distance < bestDistance) {
+    if (
+      distance <= radiusPx + hoverPixelLeeway + extraPixelLeeway &&
+      distance < bestDistance
+    ) {
       bestObject = object;
       bestDistance = distance;
     }
@@ -1489,12 +1498,16 @@ const getHoverLabelElement = (selectionId, label) => {
   element.className = "hover-label";
   element.setAttribute("type", "button");
   element.setAttribute("aria-hidden", "true");
-  element.textContent = label;
-  element.addEventListener("click", (event) => {
+  const handleLabelTrigger = (event) => {
     event.stopPropagation();
-    if (!isFocusLocked && selectionId && hoverDebugHelpers.has(selectionId)) {
+    if (!isFocusLocked && selectionId) {
       focusSelection(selectionId, { preservePreviousView: true });
     }
+  };
+  element.addEventListener("click", handleLabelTrigger);
+  element.addEventListener("touchend", (event) => {
+    event.preventDefault();
+    handleLabelTrigger(event);
   });
   viewerShell.append(element);
   hoverLabels.set(selectionId, element);
@@ -1925,11 +1938,30 @@ const toggleAutoOrbit = () => {
 const focusSelection = (selectionId, { preservePreviousView = false } = {}) => {
   stopAutoOrbit();
 
-  if (!selectionId || !hoverDebugHelpers.has(selectionId)) {
+  if (!selectionId) {
     return;
   }
 
-  const debugData = hoverDebugHelpers.get(selectionId);
+  let debugData = hoverDebugHelpers.get(selectionId);
+  if (!debugData) {
+    const resolvedId = focusSelectionIdsByCameraKey.get(selectionId);
+    if (resolvedId && hoverDebugHelpers.has(resolvedId)) {
+      selectionId = resolvedId;
+      debugData = hoverDebugHelpers.get(selectionId);
+    } else {
+      for (const [id, data] of hoverDebugHelpers.entries()) {
+        if (data.cameraKey === selectionId) {
+          selectionId = id;
+          debugData = data;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!debugData) {
+    return;
+  }
   hoverDebugBox.makeEmpty();
 
   for (const object of debugData.objects) {
@@ -2133,12 +2165,10 @@ const updateHoveredObject = () => {
   updateHoverLabel();
 };
 
-const TAP_MAX_DISTANCE = 10;
-const TAP_MAX_DURATION = 350;
-
 canvas.addEventListener("pointerdown", (event) => {
   pointerDownPos = { x: event.clientX, y: event.clientY };
   pointerDownTime = performance.now();
+  pointerMaxMove = 0;
   isDraggingPointer = false;
 
   if (isAutoOrbitEnabled) {
@@ -2148,9 +2178,14 @@ canvas.addEventListener("pointerdown", (event) => {
 });
 
 canvas.addEventListener("pointermove", (event) => {
-  const dx = event.clientX - pointerDownPos.x;
-  const dy = event.clientY - pointerDownPos.y;
-  if (Math.hypot(dx, dy) > TAP_MAX_DISTANCE) {
+  const dist = Math.hypot(
+    event.clientX - pointerDownPos.x,
+    event.clientY - pointerDownPos.y,
+  );
+  if (dist > pointerMaxMove) {
+    pointerMaxMove = dist;
+  }
+  if (dist > 18) {
     isDraggingPointer = true;
   }
   isPointerOverCanvas = true;
@@ -2159,48 +2194,116 @@ canvas.addEventListener("pointermove", (event) => {
 
 canvas.addEventListener("pointerleave", handlePointerLeave);
 
-const handleCanvasClick = (event) => {
-  const dt = performance.now() - pointerDownTime;
-  const dx = event.clientX - pointerDownPos.x;
-  const dy = event.clientY - pointerDownPos.y;
-  const dist = Math.hypot(dx, dy);
+const performTap = (clientX, clientY, { isTouch = false } = {}) => {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const tapPointer = new THREE.Vector2(
+    ((clientX - rect.left) / rect.width) * 2 - 1,
+    -((clientY - rect.top) / rect.height) * 2 + 1,
+  );
 
-  if (isDraggingPointer || dist > TAP_MAX_DISTANCE || dt > TAP_MAX_DURATION) {
-    return;
+  raycaster.setFromCamera(tapPointer, camera);
+  const intersections = raycaster.intersectObjects(hoverableMeshes, true);
+  let hitObject = null;
+
+  for (const hit of intersections) {
+    if (hit.object && hit.object.visible) {
+      hitObject = hit.object;
+      break;
+    }
   }
 
-  updatePointer(event);
+  if (!hitObject) {
+    hitObject = getLeewayHoverObject(
+      tapPointer,
+      isTouch ? 45 : 16,
+      isTouch ? 0.9 : 0.45,
+    );
+  }
 
-  raycaster.setFromCamera(pointer, camera);
-  const [intersection] = raycaster.intersectObjects(hoverableMeshes, false);
-  const hitObject = intersection?.object ?? getLeewayHoverObject();
   const hitSelection = hitObject ? getHoverSelection(hitObject) : null;
+  let targetSelectionId = hitSelection?.id ?? null;
+
+  if (targetSelectionId && !hoverDebugHelpers.has(targetSelectionId)) {
+    if (
+      hitSelection?.cameraKey &&
+      focusSelectionIdsByCameraKey.has(hitSelection.cameraKey)
+    ) {
+      targetSelectionId = focusSelectionIdsByCameraKey.get(
+        hitSelection.cameraKey,
+      );
+    }
+  }
 
   if (isFocusLocked) {
     if (hitSelection && hitSelection.cameraKey !== currentFocusedCameraKey) {
-      focusSelection(hitSelection.id, { preservePreviousView: false });
+      if (targetSelectionId) {
+        focusSelection(targetSelectionId, { preservePreviousView: false });
+      }
     } else if (!hitSelection) {
       exitFocusedSelection();
     }
     return;
   }
 
-  if (hitSelection?.id) {
-    focusSelection(hitSelection.id, { preservePreviousView: true });
+  if (targetSelectionId) {
+    focusSelection(targetSelectionId, { preservePreviousView: true });
   }
 };
 
-canvas.addEventListener("click", handleCanvasClick);
-focusPrevButton.addEventListener("click", () => stepFocusedSelection(-1));
-focusBackButton.addEventListener("click", exitFocusedSelection);
-focusNextButton.addEventListener("click", () => stepFocusedSelection(1));
-focusPanelCloseButton?.addEventListener("click", exitFocusedSelection);
+canvas.addEventListener("pointerup", (event) => {
+  const dt = performance.now() - pointerDownTime;
+  const dist = Math.hypot(
+    event.clientX - pointerDownPos.x,
+    event.clientY - pointerDownPos.y,
+  );
+  const totalMove = Math.max(dist, pointerMaxMove);
+  const isTouch = event.pointerType === "touch";
+  const maxTapDist = isTouch ? 22 : 14;
+  const maxTapDuration = isTouch ? 500 : 400;
 
-if (focusPanelHandle) {
+  if (totalMove <= maxTapDist && dt <= maxTapDuration) {
+    lastTapTimestamp = performance.now();
+    performTap(event.clientX, event.clientY, { isTouch });
+  }
+});
+
+canvas.addEventListener("click", (event) => {
+  if (performance.now() - lastTapTimestamp < 500) {
+    return;
+  }
+  performTap(event.clientX, event.clientY, { isTouch: false });
+});
+
+focusPrevButton.addEventListener("click", () => stepFocusedSelection(-1));
+focusPrevButton.addEventListener("touchend", (e) => {
+  e.preventDefault();
+  stepFocusedSelection(-1);
+});
+
+focusBackButton.addEventListener("click", exitFocusedSelection);
+focusBackButton.addEventListener("touchend", (e) => {
+  e.preventDefault();
+  exitFocusedSelection();
+});
+
+focusNextButton.addEventListener("click", () => stepFocusedSelection(1));
+focusNextButton.addEventListener("touchend", (e) => {
+  e.preventDefault();
+  stepFocusedSelection(1);
+});
+
+focusPanelCloseButton?.addEventListener("click", exitFocusedSelection);
+focusPanelCloseButton?.addEventListener("touchend", (e) => {
+  e.preventDefault();
+  exitFocusedSelection();
+});
+
+const registerBottomSheetSwipe = (element) => {
+  if (!element) return;
   let touchStartY = 0;
   let touchDiffY = 0;
 
-  focusPanelHandle.addEventListener(
+  element.addEventListener(
     "touchstart",
     (e) => {
       touchStartY = e.touches[0].clientY;
@@ -2209,7 +2312,7 @@ if (focusPanelHandle) {
     { passive: true },
   );
 
-  focusPanelHandle.addEventListener(
+  element.addEventListener(
     "touchmove",
     (e) => {
       const currentY = e.touches[0].clientY;
@@ -2221,8 +2324,8 @@ if (focusPanelHandle) {
     { passive: true },
   );
 
-  focusPanelHandle.addEventListener("touchend", () => {
-    if (touchDiffY > 60) {
+  element.addEventListener("touchend", () => {
+    if (touchDiffY > 55) {
       focusPanel.style.transform = "";
       exitFocusedSelection();
     } else {
@@ -2230,7 +2333,10 @@ if (focusPanelHandle) {
     }
     touchDiffY = 0;
   });
-}
+};
+
+registerBottomSheetSwipe(focusPanelHandle);
+registerBottomSheetSwipe(document.querySelector(".focus-panel-header"));
 
 syncToolbarStates = () => {
   if (overviewViewLabel) {
@@ -2959,13 +3065,15 @@ loader.load(modelUrl, (gltf) => {
   const framedCenter = new THREE.Vector3(0, size.y * 0.42, 0);
 
   const computeFitDistance = (modelRadius) => {
-    const aspect = window.innerWidth / window.innerHeight;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const aspect = width / height;
     const vFovRad = THREE.MathUtils.degToRad(camera.fov * 0.5);
     const hFovRad = Math.atan(Math.tan(vFovRad) * aspect);
     const distH = modelRadius / Math.sin(hFovRad);
     const distV = modelRadius / Math.sin(vFovRad);
-    const requiredDist = Math.max(distH, distV) * 1.18;
-    return Math.max(requiredDist, 3.5);
+    const safetyFactor = aspect < 1 ? 1.48 : 1.22;
+    return Math.max(Math.max(distH, distV) * safetyFactor, 3.5);
   };
 
   updateAutoOrbitParameters = () => {
@@ -3028,11 +3136,14 @@ loader.load(modelUrl, (gltf) => {
     );
   };
 
+  handleResize();
   applySavedView("default", { instant: true });
   camera.near = Math.max(maxDim / 100, 0.01);
   camera.far = Math.max(maxDim * 20, 100);
   camera.updateProjectionMatrix();
   syncCameraViewOffset();
+  window.setTimeout(handleResize, 100);
+  window.setTimeout(handleResize, 350);
 
   const shadowCenter = new THREE.Vector3(0, size.y * 0.5, 0);
   directionalLight.position.set(
@@ -3192,7 +3303,7 @@ loader.load(modelUrl, (gltf) => {
   }
 });
 
-const handleResize = () => {
+function handleResize() {
   const width = window.innerWidth;
   const height = window.innerHeight;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -3210,9 +3321,13 @@ const handleResize = () => {
     updateAutoOrbitParameters();
   }
   updateHoverLabel();
-};
+}
 
 window.addEventListener("resize", handleResize);
+window.addEventListener("orientationchange", () => {
+  window.setTimeout(handleResize, 100);
+  window.setTimeout(handleResize, 350);
+});
 
 let lastFrameTime = performance.now();
 
