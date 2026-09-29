@@ -3069,21 +3069,62 @@ loader.load(modelUrl, (gltf) => {
 
   const framedCenter = new THREE.Vector3(0, size.y * 0.42, 0);
 
-  const computeFitDistance = (modelRadius) => {
+  const halfX = size.x * 0.5;
+  const halfZ = size.z * 0.5;
+  const modelBoxCorners = [
+    new THREE.Vector3(-halfX, 0, -halfZ),
+    new THREE.Vector3(-halfX, 0, halfZ),
+    new THREE.Vector3(-halfX, size.y, -halfZ),
+    new THREE.Vector3(-halfX, size.y, halfZ),
+    new THREE.Vector3(halfX, 0, -halfZ),
+    new THREE.Vector3(halfX, 0, halfZ),
+    new THREE.Vector3(halfX, size.y, -halfZ),
+    new THREE.Vector3(halfX, size.y, halfZ),
+  ];
+
+  const computeFitDistance = (viewDirection = null) => {
     const width = window.innerWidth;
     const height = window.innerHeight;
     const aspect = width / height;
+    const isMobile = aspect < 1 || width <= 720;
+    const targetFill = isMobile ? 0.98 : 0.94;
+
     const vFovRad = THREE.MathUtils.degToRad(camera.fov * 0.5);
-    const hFovRad = Math.atan(Math.tan(vFovRad) * aspect);
-    const distH = modelRadius / Math.sin(hFovRad);
-    const distV = modelRadius / Math.sin(vFovRad);
-    const safetyFactor = aspect < 1 ? 1.25 : 1.15;
-    return Math.max(Math.max(distH, distV) * safetyFactor, 3.5);
+    const tanV = Math.tan(vFovRad);
+    const tanH = tanV * aspect;
+
+    const dir = (viewDirection ?? savedViewDirections.default)
+      .clone()
+      .normalize();
+    const camUp = new THREE.Vector3(0, 1, 0);
+    let camRight = new THREE.Vector3().crossVectors(dir, camUp);
+    if (camRight.lengthSq() < 1e-4) {
+      camRight = new THREE.Vector3(1, 0, 0);
+    } else {
+      camRight.normalize();
+    }
+    const actualCamUp = new THREE.Vector3()
+      .crossVectors(camRight, dir)
+      .normalize();
+
+    let maxD = 0;
+    for (const c of modelBoxCorners) {
+      const rel = c.clone().sub(framedCenter);
+      const zOffset = rel.dot(dir);
+      const xCam = Math.abs(rel.dot(camRight));
+      const yCam = Math.abs(rel.dot(actualCamUp));
+
+      const dReqH = zOffset + xCam / (targetFill * tanH);
+      const dReqV = zOffset + yCam / (targetFill * tanV);
+      maxD = Math.max(maxD, dReqH, dReqV);
+    }
+
+    return Math.max(maxD, 3.5);
   };
 
   updateAutoOrbitParameters = () => {
-    const fitDistance = computeFitDistance(radius);
     const defaultOrbitDirection = new THREE.Vector3(0, 0.3, 0.75).normalize();
+    const fitDistance = computeFitDistance(defaultOrbitDirection);
     autoOrbitTarget.copy(framedCenter);
     autoOrbitRadius =
       defaultOrbitDirection.clone().setY(0).length() * fitDistance;
@@ -3100,7 +3141,7 @@ loader.load(modelUrl, (gltf) => {
       return;
     }
 
-    const fitDistance = computeFitDistance(radius);
+    const fitDistance = computeFitDistance(viewDirection);
     const position = framedCenter
       .clone()
       .add(viewDirection.clone().normalize().multiplyScalar(fitDistance));
