@@ -15,24 +15,69 @@ app.innerHTML = `
   <div class="viewer-shell">
     <canvas class="viewer"></canvas>
     <div class="focus-controls">
-      <button class="focus-back" type="button">Exit</button>
-      <button class="focus-nav focus-prev" type="button">&lt;</button>
-      <button class="focus-nav focus-next" type="button">&gt;</button>
+      <button class="focus-back" type="button" title="Back to Overview">‹ Overview</button>
+      <button class="focus-nav focus-prev" type="button" aria-label="Previous component">&#8249;</button>
+      <span class="focus-counter" aria-live="polite"></span>
+      <button class="focus-nav focus-next" type="button" aria-label="Next component">&#8250;</button>
     </div>
+    <nav class="overview-toolbar" aria-label="Scene controls">
+      <button class="overview-btn overview-reset-btn" type="button" title="Reset View">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+        <span>Reset</span>
+      </button>
+      <button class="overview-btn overview-views-btn" type="button" title="Cycle Views">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+        <span class="overview-view-label">View</span>
+      </button>
+      <button class="overview-btn overview-laser-btn" type="button" title="Toggle Laser Beam">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+        <span>Laser</span>
+      </button>
+      <button class="overview-btn overview-orbit-btn" type="button" title="Toggle Auto-Orbit">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 9 9 9 9 0 0 1-9 9"/></svg>
+        <span>Orbit</span>
+      </button>
+      <button class="overview-btn overview-labels-btn" type="button" title="Toggle Component Labels">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        <span>Labels</span>
+      </button>
+    </nav>
     <button
       class="help-toggle"
       type="button"
       aria-controls="help-panel"
       aria-expanded="false"
+      title="Help & Controls"
     >
       Help
     </button>
     <aside class="help-panel" id="help-panel" aria-hidden="true">
       <div class="help-panel-header">
-        <h2>How to Navigate</h2>
+        <h2>Navigation & Controls</h2>
         <button class="help-close" type="button" aria-label="Close help">
           &times;
         </button>
+      </div>
+      <div class="help-section">
+        <h3>Touch (Mobile & Tablet)</h3>
+        <dl>
+          <div>
+            <dt>1-Finger Drag</dt>
+            <dd>Rotate & orbit around the optical setup.</dd>
+          </div>
+          <div>
+            <dt>Pinch Zoom</dt>
+            <dd>Pinch with 2 fingers to zoom smoothly in & out.</dd>
+          </div>
+          <div>
+            <dt>Tap Part / Label</dt>
+            <dd>Focus component & inspect optical behavior.</dd>
+          </div>
+          <div>
+            <dt>Exit Focus</dt>
+            <dd>Tap Overview button or empty space to return.</dd>
+          </div>
+        </dl>
       </div>
       <div class="help-section">
         <h3>Mouse</h3>
@@ -50,7 +95,7 @@ app.innerHTML = `
             <dd>Zoom in & out.</dd>
           </div>
           <div>
-            <dt>Click a label</dt>
+            <dt>Click a part / label</dt>
             <dd>Focus optical component and show explainer panel.</dd>
           </div>
         </dl>
@@ -60,7 +105,7 @@ app.innerHTML = `
         <dl>
           <div>
             <dt>Left / Right</dt>
-            <dd>Cycle views.</dd>
+            <dd>Cycle views or components.</dd>
           </div>
           <div>
             <dt>Up</dt>
@@ -68,7 +113,7 @@ app.innerHTML = `
           </div>
           <div>
             <dt>R</dt>
-            <dd>Reset to the default overview.</dd>
+            <dd>Reset to default overview.</dd>
           </div>
           <div>
             <dt>O</dt>
@@ -76,23 +121,19 @@ app.innerHTML = `
           </div>
           <div>
             <dt>C</dt>
-            <dd> Hide UI while focused.</dd>
+            <dd>Hide UI while focused.</dd>
           </div>
           <div>
             <dt>X</dt>
-            <dd>Cycle kernels.</dd>
+            <dd>Cycle optical kernels.</dd>
           </div>
           <div>
             <dt>Z</dt>
             <dd>Toggle all hover labels.</dd>
           </div>
           <div>
-            <dt>L</dt>
-            <dd>Turn on laser.</dd>
-          </div>
-          <div>
-            <dt>K</dt>
-            <dd>Kill laser.</dd>
+            <dt>L / K</dt>
+            <dd>Turn laser on / off.</dd>
           </div>
           <div>
             <dt>Shift + L</dt>
@@ -100,13 +141,17 @@ app.innerHTML = `
           </div>
           <div>
             <dt>Esc</dt>
-            <dd>Close help menu.</dd>
+            <dd>Close help menu or exit focus.</dd>
           </div>
         </dl>
       </div>
     </aside>
     <aside class="focus-panel">
-      <h2 class="focus-panel-title"></h2>
+      <div class="focus-panel-handle"></div>
+      <div class="focus-panel-header">
+        <h2 class="focus-panel-title"></h2>
+        <button class="focus-panel-close" type="button" aria-label="Close focus panel">&times;</button>
+      </div>
       <div class="focus-panel-body"></div>
       <div class="focus-panel-toolbar">
         <label class="focus-panel-kernel-label" for="focus-panel-kernel">
@@ -129,10 +174,13 @@ const focusControls = document.querySelector(".focus-controls");
 const focusPrevButton = document.querySelector(".focus-prev");
 const focusBackButton = document.querySelector(".focus-back");
 const focusNextButton = document.querySelector(".focus-next");
+const focusStepIndicator = document.querySelector(".focus-counter");
 const helpToggleButton = document.querySelector(".help-toggle");
 const helpCloseButton = document.querySelector(".help-close");
 const helpPanel = document.querySelector(".help-panel");
 const focusPanel = document.querySelector(".focus-panel");
+const focusPanelHandle = document.querySelector(".focus-panel-handle");
+const focusPanelCloseButton = document.querySelector(".focus-panel-close");
 const focusPanelTitle = document.querySelector(".focus-panel-title");
 const focusPanelBody = document.querySelector(".focus-panel-body");
 const focusPanelToolbar = document.querySelector(".focus-panel-toolbar");
@@ -140,6 +188,14 @@ const focusPanelKernelSelect = document.querySelector(
   ".focus-panel-kernel-select",
 );
 const focusPanelMedia = document.querySelector(".focus-panel-media");
+const overviewToolbar = document.querySelector(".overview-toolbar");
+const overviewResetBtn = document.querySelector(".overview-reset-btn");
+const overviewViewsBtn = document.querySelector(".overview-views-btn");
+const overviewViewLabel = document.querySelector(".overview-view-label");
+const overviewLaserBtn = document.querySelector(".overview-laser-btn");
+const overviewOrbitBtn = document.querySelector(".overview-orbit-btn");
+const overviewLabelsBtn = document.querySelector(".overview-labels-btn");
+const overviewCycleViews = ["default", "front", "right", "back", "left", "top"];
 let focusPanelTransitionFrame = null;
 let focusPanelTransitionTimeout = null;
 let lastRenderedFocusPanelKey = null;
@@ -227,7 +283,8 @@ const renderer = new THREE.WebGLRenderer({
   antialias: true,
   alpha: true,
 });
-renderer.setPixelRatio(2);
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+renderer.setPixelRatio(dpr);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x000000, 0);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -237,7 +294,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 
 const composer = new EffectComposer(renderer);
-composer.setPixelRatio(2);
+composer.setPixelRatio(dpr);
 composer.setSize(window.innerWidth, window.innerHeight);
 
 const renderPass = new RenderPass(scene, camera);
@@ -520,8 +577,14 @@ let activeHoverLabel = null;
 let areGuiPanelsVisible = false;
 let currentOverviewViewName = "default";
 let lastHorizontalOverviewViewName = "front";
-let targetCameraViewOffsetPx = 0;
-let currentCameraViewOffsetPx = 0;
+let targetCameraViewOffsetX = 0;
+let targetCameraViewOffsetY = 0;
+let currentCameraViewOffsetX = 0;
+let currentCameraViewOffsetY = 0;
+let pointerDownPos = { x: 0, y: 0 };
+let pointerDownTime = 0;
+let isDraggingPointer = false;
+let syncToolbarStates = null;
 const hoverPixelLeeway = 2;
 const hoverRadiusScale = 0.28;
 const hoverLabelBounds = new THREE.Box3();
@@ -899,19 +962,42 @@ const syncFocusBackButton = () => {
     !isFocusLocked ||
     focusedIndex === -1 ||
     focusedIndex >= orderedFocusCameraKeys.length - 1;
+
+  if (focusStepIndicator) {
+    focusStepIndicator.textContent =
+      focusedIndex >= 0
+        ? `${focusedIndex + 1} / ${orderedFocusCameraKeys.length}`
+        : "";
+  }
+  overviewToolbar?.classList.toggle("is-hidden", isFocusLocked);
 };
 
 const syncCameraViewOffset = () => {
   const viewportWidth = window.innerWidth;
-  const isDesktopFocusRail =
+  const viewportHeight = window.innerHeight;
+  const isPanelVisible =
     isFocusLocked &&
     !isCinematicModeEnabled &&
-    viewportWidth > 720 &&
     focusPanel.classList.contains("is-visible");
 
-  targetCameraViewOffsetPx = isDesktopFocusRail
-    ? focusPanel.getBoundingClientRect().width
-    : 0;
+  if (!isPanelVisible) {
+    targetCameraViewOffsetX = 0;
+    targetCameraViewOffsetY = 0;
+    return;
+  }
+
+  if (viewportWidth > 720) {
+    // Desktop: side panel on right
+    targetCameraViewOffsetX = focusPanel.getBoundingClientRect().width;
+    targetCameraViewOffsetY = 0;
+  } else {
+    // Mobile: bottom panel
+    const panelHeight = focusPanel.getBoundingClientRect().height;
+    targetCameraViewOffsetX = 0;
+    targetCameraViewOffsetY =
+      (viewportHeight * panelHeight) /
+      Math.max(2 * viewportHeight - panelHeight, 1);
+  }
 };
 
 const updateCameraViewOffset = (deltaMs) => {
@@ -919,33 +1005,43 @@ const updateCameraViewOffset = (deltaMs) => {
   const viewportHeight = window.innerHeight;
   const blend = 1 - Math.exp(-deltaMs / 140);
 
-  currentCameraViewOffsetPx = THREE.MathUtils.lerp(
-    currentCameraViewOffsetPx,
-    targetCameraViewOffsetPx,
+  currentCameraViewOffsetX = THREE.MathUtils.lerp(
+    currentCameraViewOffsetX,
+    targetCameraViewOffsetX,
+    blend,
+  );
+  currentCameraViewOffsetY = THREE.MathUtils.lerp(
+    currentCameraViewOffsetY,
+    targetCameraViewOffsetY,
     blend,
   );
 
-  if (Math.abs(currentCameraViewOffsetPx - targetCameraViewOffsetPx) < 0.5) {
-    currentCameraViewOffsetPx = targetCameraViewOffsetPx;
+  if (Math.abs(currentCameraViewOffsetX - targetCameraViewOffsetX) < 0.5) {
+    currentCameraViewOffsetX = targetCameraViewOffsetX;
+  }
+  if (Math.abs(currentCameraViewOffsetY - targetCameraViewOffsetY) < 0.5) {
+    currentCameraViewOffsetY = targetCameraViewOffsetY;
   }
 
-  if (currentCameraViewOffsetPx <= 0.01) {
+  if (currentCameraViewOffsetX <= 0.01 && currentCameraViewOffsetY <= 0.01) {
     camera.clearViewOffset();
     camera.aspect = viewportWidth / viewportHeight;
     camera.updateProjectionMatrix();
     return;
   }
 
-  const fullWidth = viewportWidth + currentCameraViewOffsetPx;
+  const fullWidth = viewportWidth + currentCameraViewOffsetX;
+  const fullHeight = viewportHeight + currentCameraViewOffsetY;
+
   camera.setViewOffset(
     fullWidth,
-    viewportHeight,
-    currentCameraViewOffsetPx,
-    0,
+    fullHeight,
+    currentCameraViewOffsetX,
+    currentCameraViewOffsetY,
     viewportWidth,
     viewportHeight,
   );
-  camera.aspect = fullWidth / viewportHeight;
+  camera.aspect = fullWidth / fullHeight;
   camera.updateProjectionMatrix();
 };
 
@@ -1389,10 +1485,17 @@ const getHoverLabelElement = (selectionId, label) => {
     return element;
   }
 
-  element = document.createElement("div");
+  element = document.createElement("button");
   element.className = "hover-label";
+  element.setAttribute("type", "button");
   element.setAttribute("aria-hidden", "true");
   element.textContent = label;
+  element.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (!isFocusLocked && selectionId && hoverDebugHelpers.has(selectionId)) {
+      focusSelection(selectionId, { preservePreviousView: true });
+    }
+  });
   viewerShell.append(element);
   hoverLabels.set(selectionId, element);
   return element;
@@ -1786,6 +1889,7 @@ const stopAutoOrbit = () => {
     cameraTransition = null;
   }
   controls.enabled = true;
+  syncToolbarStates?.();
 };
 
 const toggleAutoOrbit = () => {
@@ -1804,6 +1908,7 @@ const toggleAutoOrbit = () => {
 
   isAutoOrbitArming = true;
   controls.enabled = false;
+  syncToolbarStates?.();
   const orbitStartPosition = new THREE.Vector3(
     autoOrbitTarget.x + Math.cos(autoOrbitAngle) * autoOrbitRadius,
     autoOrbitTarget.y + autoOrbitHeight,
@@ -1813,6 +1918,7 @@ const toggleAutoOrbit = () => {
     isAutoOrbitArming = false;
     isAutoOrbitEnabled = true;
     controls.enabled = false;
+    syncToolbarStates?.();
   });
 };
 
@@ -1850,9 +1956,19 @@ const focusSelection = (selectionId, { preservePreviousView = false } = {}) => {
     .addScaledVector(focusFrontDirection, frontHalfExtent)
     .add(new THREE.Vector3(0, hoverDebugSize.y * 0.5, 0));
 
+  const isMobile = window.innerWidth <= 720;
+  const panelHeightEstimate = isMobile
+    ? Math.min(window.innerHeight * 0.44, 380)
+    : 0;
+  const visibleHeightRatio = isMobile
+    ? (window.innerHeight - panelHeightEstimate) / window.innerHeight
+    : 1.0;
+
   const planeSize = getFocusPlaneSize(debugData.frontFace, hoverDebugSize);
-  const verticalDistance =
-    (planeSize.y * 0.5) / Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
+  const effectiveVfovRad = THREE.MathUtils.degToRad(
+    camera.fov * 0.5 * visibleHeightRatio,
+  );
+  const verticalDistance = (planeSize.y * 0.5) / Math.tan(effectiveVfovRad);
   const horizontalFov =
     2 *
     Math.atan(
@@ -1864,13 +1980,13 @@ const focusSelection = (selectionId, { preservePreviousView = false } = {}) => {
     Math.max(
       verticalDistance,
       horizontalDistance,
-      hoverDebugSize.length() * 0.35,
-    ) * 1.1;
+      hoverDebugSize.length() * (isMobile ? 0.45 : 0.35),
+    ) * 1.15;
 
   focusCameraPosition
     .copy(focusCameraTarget)
     .addScaledVector(focusFrontDirection, distance)
-    .add(new THREE.Vector3(0, hoverDebugSize.y * 0.3, 0));
+    .add(new THREE.Vector3(0, hoverDebugSize.y * (isMobile ? 0.12 : 0.3), 0));
 
   if (preservePreviousView) {
     previousCameraPosition.copy(camera.position);
@@ -1974,6 +2090,18 @@ const updateHoveredObject = () => {
     return;
   }
 
+  if (isDraggingPointer) {
+    if (hoveredSelectionId) {
+      hoveredSelectionId = null;
+      hoveredSelectionObjects = [];
+      hoveredSelectionLabel = "";
+      hoveredSelectionCameraKey = null;
+      syncHoveredOutline();
+      updateHoverLabel();
+    }
+    return;
+  }
+
   if (!loadedModel || !isPointerOverCanvas || hoverableMeshes.length === 0) {
     if (hoveredSelectionId) {
       hoveredSelectionId = null;
@@ -2005,12 +2133,165 @@ const updateHoveredObject = () => {
   updateHoverLabel();
 };
 
-canvas.addEventListener("pointermove", handlePointerMove);
+const TAP_MAX_DISTANCE = 10;
+const TAP_MAX_DURATION = 350;
+
+canvas.addEventListener("pointerdown", (event) => {
+  pointerDownPos = { x: event.clientX, y: event.clientY };
+  pointerDownTime = performance.now();
+  isDraggingPointer = false;
+
+  if (isAutoOrbitEnabled) {
+    stopAutoOrbit();
+    syncToolbarStates();
+  }
+});
+
+canvas.addEventListener("pointermove", (event) => {
+  const dx = event.clientX - pointerDownPos.x;
+  const dy = event.clientY - pointerDownPos.y;
+  if (Math.hypot(dx, dy) > TAP_MAX_DISTANCE) {
+    isDraggingPointer = true;
+  }
+  isPointerOverCanvas = true;
+  updatePointer(event);
+});
+
 canvas.addEventListener("pointerleave", handlePointerLeave);
-canvas.addEventListener("click", focusCameraOnSelection);
+
+const handleCanvasClick = (event) => {
+  const dt = performance.now() - pointerDownTime;
+  const dx = event.clientX - pointerDownPos.x;
+  const dy = event.clientY - pointerDownPos.y;
+  const dist = Math.hypot(dx, dy);
+
+  if (isDraggingPointer || dist > TAP_MAX_DISTANCE || dt > TAP_MAX_DURATION) {
+    return;
+  }
+
+  updatePointer(event);
+
+  raycaster.setFromCamera(pointer, camera);
+  const [intersection] = raycaster.intersectObjects(hoverableMeshes, false);
+  const hitObject = intersection?.object ?? getLeewayHoverObject();
+  const hitSelection = hitObject ? getHoverSelection(hitObject) : null;
+
+  if (isFocusLocked) {
+    if (hitSelection && hitSelection.cameraKey !== currentFocusedCameraKey) {
+      focusSelection(hitSelection.id, { preservePreviousView: false });
+    } else if (!hitSelection) {
+      exitFocusedSelection();
+    }
+    return;
+  }
+
+  if (hitSelection?.id) {
+    focusSelection(hitSelection.id, { preservePreviousView: true });
+  }
+};
+
+canvas.addEventListener("click", handleCanvasClick);
 focusPrevButton.addEventListener("click", () => stepFocusedSelection(-1));
 focusBackButton.addEventListener("click", exitFocusedSelection);
 focusNextButton.addEventListener("click", () => stepFocusedSelection(1));
+focusPanelCloseButton?.addEventListener("click", exitFocusedSelection);
+
+if (focusPanelHandle) {
+  let touchStartY = 0;
+  let touchDiffY = 0;
+
+  focusPanelHandle.addEventListener(
+    "touchstart",
+    (e) => {
+      touchStartY = e.touches[0].clientY;
+      touchDiffY = 0;
+    },
+    { passive: true },
+  );
+
+  focusPanelHandle.addEventListener(
+    "touchmove",
+    (e) => {
+      const currentY = e.touches[0].clientY;
+      touchDiffY = Math.max(0, currentY - touchStartY);
+      if (touchDiffY > 0) {
+        focusPanel.style.transform = `translateY(${touchDiffY}px)`;
+      }
+    },
+    { passive: true },
+  );
+
+  focusPanelHandle.addEventListener("touchend", () => {
+    if (touchDiffY > 60) {
+      focusPanel.style.transform = "";
+      exitFocusedSelection();
+    } else {
+      focusPanel.style.transform = "";
+    }
+    touchDiffY = 0;
+  });
+}
+
+syncToolbarStates = () => {
+  if (overviewViewLabel) {
+    const formattedName = currentOverviewViewName
+      ? currentOverviewViewName.charAt(0).toUpperCase() +
+        currentOverviewViewName.slice(1)
+      : "Default";
+    overviewViewLabel.textContent = `View: ${formattedName}`;
+  }
+  if (overviewOrbitBtn) {
+    overviewOrbitBtn.classList.toggle("is-active", isAutoOrbitEnabled);
+  }
+  if (overviewLaserBtn) {
+    const isLaserActive =
+      Boolean(laserAnimationState) || guiState.laserOpacity > 0;
+    overviewLaserBtn.classList.toggle("is-active", isLaserActive);
+  }
+  if (overviewLabelsBtn) {
+    overviewLabelsBtn.classList.toggle("is-active", areAllHoverLabelsVisible);
+  }
+};
+
+overviewResetBtn?.addEventListener("click", () => {
+  stopAutoOrbit();
+  applySavedView?.("default");
+  syncToolbarStates();
+});
+
+overviewViewsBtn?.addEventListener("click", () => {
+  const currentIndex = overviewCycleViews.indexOf(currentOverviewViewName);
+  const nextIndex = (currentIndex + 1) % overviewCycleViews.length;
+  const nextView = overviewCycleViews[nextIndex];
+  applySavedView?.(nextView);
+  syncToolbarStates();
+});
+
+overviewLaserBtn?.addEventListener("click", () => {
+  const isLaserActive =
+    Boolean(laserAnimationState) || guiState.laserOpacity > 0;
+  if (isLaserActive) {
+    stopLaserAnimation();
+  } else {
+    startLaserAnimation();
+  }
+  syncToolbarStates();
+});
+
+overviewOrbitBtn?.addEventListener("click", () => {
+  toggleAutoOrbit();
+  syncToolbarStates();
+});
+
+overviewLabelsBtn?.addEventListener("click", () => {
+  areAllHoverLabelsVisible = !areAllHoverLabelsVisible;
+  if (!areAllHoverLabelsVisible) {
+    hideAllGeneralHoverLabels();
+  }
+  updateHoverLabel();
+  syncToolbarStates();
+});
+
 const setHelpPanelVisible = (isVisible) => {
   helpPanel.classList.toggle("is-visible", isVisible);
   helpPanel.setAttribute("aria-hidden", String(!isVisible));
@@ -2070,10 +2351,17 @@ scene.environment = pmremGenerator.fromScene(
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.screenSpacePanning = true;
 controls.enablePan = true;
-controls.panSpeed = 1.1;
-controls.zoomSpeed = 1.2;
+controls.panSpeed = 0.8;
+controls.zoomSpeed = 1.0;
+controls.rotateSpeed = 0.88;
 controls.maxPolarAngle = Math.PI / 2 - 0.01;
+controls.touches = {
+  ONE: THREE.TOUCH.ROTATE,
+  TWO: THREE.TOUCH.DOLLY_PAN,
+};
 
 const fillLight = new THREE.DirectionalLight(0xd7e3f4, 0.45);
 fillLight.position.set(-6, 7, -4);
@@ -2288,6 +2576,7 @@ const startLaserAnimation = () => {
     index: 0,
     elapsed: 0,
   };
+  syncToolbarStates?.();
 };
 
 const stopLaserAnimation = () => {
@@ -2300,6 +2589,7 @@ const stopLaserAnimation = () => {
     entry.object.position.copy(entry.originalPosition);
     entry.object.scale.copy(entry.originalScale);
   }
+  syncToolbarStates?.();
 };
 
 const updateLaserAnimation = (deltaMs) => {
@@ -2361,6 +2651,7 @@ const updateLaserAnimation = (deltaMs) => {
 };
 
 let applySavedView = null;
+let updateAutoOrbitParameters = null;
 
 const gui = new GUI({ title: "Scene Controls" });
 const meshGui = new GUI({ title: "Mesh Visibility" });
@@ -2666,13 +2957,28 @@ loader.load(modelUrl, (gltf) => {
   addOpticSurgLogoToFoundation(model);
 
   const framedCenter = new THREE.Vector3(0, size.y * 0.42, 0);
-  const fitDistance = Math.max(radius * 1.45, 3.5);
-  const defaultOrbitDirection = new THREE.Vector3(0, 0.3, 0.75).normalize();
-  autoOrbitTarget.copy(framedCenter);
-  autoOrbitRadius =
-    defaultOrbitDirection.clone().setY(0).length() * fitDistance;
-  autoOrbitHeight = defaultOrbitDirection.y * fitDistance;
-  autoOrbitAngle = Math.atan2(defaultOrbitDirection.z, defaultOrbitDirection.x);
+
+  const computeFitDistance = (modelRadius) => {
+    const aspect = window.innerWidth / window.innerHeight;
+    const vFovRad = THREE.MathUtils.degToRad(camera.fov * 0.5);
+    const hFovRad = Math.atan(Math.tan(vFovRad) * aspect);
+    const distH = modelRadius / Math.sin(hFovRad);
+    const distV = modelRadius / Math.sin(vFovRad);
+    const requiredDist = Math.max(distH, distV) * 1.18;
+    return Math.max(requiredDist, 3.5);
+  };
+
+  updateAutoOrbitParameters = () => {
+    const fitDistance = computeFitDistance(radius);
+    const defaultOrbitDirection = new THREE.Vector3(0, 0.3, 0.75).normalize();
+    autoOrbitTarget.copy(framedCenter);
+    autoOrbitRadius =
+      defaultOrbitDirection.clone().setY(0).length() * fitDistance;
+    autoOrbitHeight = defaultOrbitDirection.y * fitDistance;
+    autoOrbitAngle = Math.atan2(defaultOrbitDirection.z, defaultOrbitDirection.x);
+  };
+
+  updateAutoOrbitParameters();
 
   applySavedView = (viewName, { instant = false } = {}) => {
     const viewDirection = savedViewDirections[viewName];
@@ -2681,11 +2987,13 @@ loader.load(modelUrl, (gltf) => {
       return;
     }
 
+    const fitDistance = computeFitDistance(radius);
     const position = framedCenter
       .clone()
       .add(viewDirection.clone().normalize().multiplyScalar(fitDistance));
 
     currentOverviewViewName = viewName;
+    syncToolbarStates();
 
     if (horizontalOverviewViews.includes(viewName)) {
       lastHorizontalOverviewViewName = viewName;
@@ -2715,6 +3023,7 @@ loader.load(modelUrl, (gltf) => {
       null,
       () => {
         currentOverviewViewName = viewName;
+        syncToolbarStates();
       },
     );
   };
@@ -2884,12 +3193,22 @@ loader.load(modelUrl, (gltf) => {
 });
 
 const handleResize = () => {
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(dpr);
+  composer.setPixelRatio(dpr);
+  renderer.setSize(width, height);
+  composer.setSize(width, height);
+  bloomPass.setSize(width, height);
+  outlinePass.setSize(width, height);
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
   syncCameraViewOffset();
   updateCameraViewOffset(1000);
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight);
-  bloomPass.setSize(window.innerWidth, window.innerHeight);
-  outlinePass.setSize(window.innerWidth, window.innerHeight);
+  if (updateAutoOrbitParameters) {
+    updateAutoOrbitParameters();
+  }
   updateHoverLabel();
 };
 
