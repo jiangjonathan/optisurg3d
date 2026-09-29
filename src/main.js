@@ -27,7 +27,7 @@ app.innerHTML = `
       </button>
       <button class="overview-btn overview-views-btn" type="button" title="Cycle Views">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-        <span class="overview-view-label">View</span>
+        <span class="overview-view-label"><span class="overview-view-prefix">View: </span><span class="overview-view-name">Default</span></span>
       </button>
       <button class="overview-btn overview-laser-btn" type="button" title="Toggle Laser Beam">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
@@ -2344,7 +2344,12 @@ syncToolbarStates = () => {
       ? currentOverviewViewName.charAt(0).toUpperCase() +
         currentOverviewViewName.slice(1)
       : "Default";
-    overviewViewLabel.textContent = `View: ${formattedName}`;
+    const nameEl = overviewViewLabel.querySelector(".overview-view-name");
+    if (nameEl) {
+      nameEl.textContent = formattedName;
+    } else {
+      overviewViewLabel.innerHTML = `<span class="overview-view-prefix">View: </span><span class="overview-view-name">${formattedName}</span>`;
+    }
   }
   if (overviewOrbitBtn) {
     overviewOrbitBtn.classList.toggle("is-active", isAutoOrbitEnabled);
@@ -3072,7 +3077,7 @@ loader.load(modelUrl, (gltf) => {
     const hFovRad = Math.atan(Math.tan(vFovRad) * aspect);
     const distH = modelRadius / Math.sin(hFovRad);
     const distV = modelRadius / Math.sin(vFovRad);
-    const safetyFactor = aspect < 1 ? 1.48 : 1.22;
+    const safetyFactor = aspect < 1 ? 1.25 : 1.15;
     return Math.max(Math.max(distH, distV) * safetyFactor, 3.5);
   };
 

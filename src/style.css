@@ -522,6 +522,10 @@ body {
     border-color: rgba(255, 255, 255, 0.24);
 }
 
+.overview-view-prefix {
+    display: inline;
+}
+
 .overview-btn:active {
     transform: scale(0.96);
 }
@@ -698,15 +702,43 @@ body {
 
     .overview-toolbar {
         bottom: calc(0.75rem + var(--sab));
-        max-width: calc(100vw - 1.2rem);
-        padding: 0.3rem 0.35rem;
-        gap: 0.35rem;
+        width: max-content;
+        max-width: calc(100vw - 1.5rem);
+        padding: 0.26rem 0.32rem;
+        gap: 0.24rem;
+        border-radius: 20px;
     }
 
     .overview-btn {
-        padding: 0.4rem 0.55rem;
-        min-height: 36px;
-        font-size: 0.78rem;
+        padding: 0.32rem 0.44rem;
+        min-height: 34px;
+        font-size: 0.72rem;
+        gap: 0.24rem;
+        border-radius: 12px;
+    }
+
+    .overview-btn svg {
+        width: 13px;
+        height: 13px;
+        flex-shrink: 0;
+    }
+
+    .overview-view-prefix {
+        display: none;
+    }
+}
+
+@media (max-width: 380px) {
+    .overview-toolbar {
+        max-width: calc(100vw - 1rem);
+        padding: 0.22rem 0.26rem;
+        gap: 0.18rem;
+    }
+
+    .overview-btn {
+        padding: 0.26rem 0.36rem;
+        font-size: 0.68rem;
+        gap: 0.18rem;
     }
 }
 
